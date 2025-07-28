@@ -101,7 +101,8 @@ def train_bpe(
     pretokenizer = get_pretokenizer(kwargs.get("pretokenizer_name", "default"))
     debug = kwargs.get("debug", False)
 
-    boundaries = _find_chunk_boundaries(open(input_path, "rb"), NUM_PROCESSES, b"<|endoftext|>")
+    with open(input_path, "rb") as f:
+        boundaries = _find_chunk_boundaries(f, NUM_PROCESSES, b"<|endoftext|>")
 
     # TODO: parallelize this.
     # The following is a serial implementation, but you can parallelize this
