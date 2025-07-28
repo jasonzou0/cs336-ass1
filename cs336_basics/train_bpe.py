@@ -1,4 +1,5 @@
 import os
+import pickle
 from collections import defaultdict
 from typing import BinaryIO
 
@@ -335,3 +336,32 @@ def train_bpe(
     # Invert vocab and return
     inverted_vocab: dict[int, bytes] = {v: k for k, v in vocab.items()}
     return inverted_vocab, merges
+
+
+def save_bpe(
+    vocab: dict[int, bytes], 
+    merges: list[tuple[bytes, bytes]], 
+    output_directory: str | os.PathLike
+) -> None:
+    """
+    Save BPE vocabulary and merges to disk as pickled files.
+    
+    Args:
+        vocab: The vocabulary dictionary mapping token IDs to bytes
+        merges: List of merge tuples (bytes, bytes)
+        output_directory: Directory where to save the vocab.pkl and merges.pkl files
+    """
+    output_dir = os.path.abspath(output_directory)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    vocab_path = os.path.join(output_dir, "vocab.pkl")
+    merges_path = os.path.join(output_dir, "merges.pkl")
+    
+    with open(vocab_path, "wb") as f:
+        pickle.dump(vocab, f)
+    
+    with open(merges_path, "wb") as f:
+        pickle.dump(merges, f)
+    
+    print(f"Saved vocabulary to {vocab_path}")
+    print(f"Saved merges to {merges_path}")
