@@ -9,6 +9,7 @@ import json
 import os
 import pstats
 import sys
+import time
 
 from cs336_basics.train_bpe import train_bpe, save_bpe
 
@@ -166,14 +167,19 @@ def main():
             print(f"  Profiling enabled: SVG will be generated")
         print()
 
+        start_time = time.time()
         vocab, merges = train_bpe(
             input_path=args.input_path,
             vocab_size=args.vocab_size,
             special_tokens=special_tokens,
             stop_at_merge_num=args.stop_at_merge_num,
         )
-
-        print(f"Training completed. Vocabulary size: {len(vocab)}, Merges: {len(merges)}")
+        execution_time = time.time() - start_time
+        actual_vocab_size = len(vocab)
+        print(f"BPE Training completed:")
+        print(f"  Input vocab size: {args.vocab_size}")
+        print(f"  Final vocab size: {actual_vocab_size}")
+        print(f"  Execution time: {execution_time:.2f} seconds")
 
         # Save the results to disk
         save_bpe(vocab, merges, args.output_dir)

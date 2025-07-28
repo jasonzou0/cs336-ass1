@@ -2,6 +2,7 @@ import os
 import pickle
 from collections import defaultdict
 from typing import BinaryIO
+from multiprocessing import Pool
 
 import regex as re
 
@@ -72,9 +73,42 @@ def get_pretokenizer(tokenizer_name: str="default") -> re.Pattern:
     else:
         raise ValueError(f"Unknown tokenizer: {tokenizer_name}")
 
+def _process_chunk(args: tuple) -> dict[tuple, int]:
+    """
+    Worker function to process a single chunk of the corpus.
+
+    Args:
+        args: Tuple containing (input_path, start, end, pretokenizer_name, special_tokens, debug)
+
+    Returns:
+        Dictionary mapping tuples of bytes to their counts for this chunk
+    """
+    input_path, start, end, pretokenizer_name, special_tokens, debug = args
+
+    pretokenizer = get_pretokenizer(pretokenizer_name)
+
+    chunk_tokens_counts: dict[tuple, int] = defaultdict(int)
+
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
+
+        if debug:
+            print(f"Processing chunk from {start} to {end}: {chunk[:100]}...")
+
+        # Run pre-tokenization on the chunk and store the counts for each pre-token
+        mini_chunks = re.split("|".join([re.escape(token) for token in special_tokens]), chunk)
+        for mini_chunk in mini_chunks:
+            for match in pretokenizer.finditer(mini_chunk):
+                token = match.group()
+                byte_tuple = tuple(bytes([b]) for b in token.encode("utf-8"))
+                chunk_tokens_counts[byte_tuple] += 1
+
+    return dict(chunk_tokens_counts)  # Convert defaultdict to regular dict for pickling
+
 def pretokenize_corpus(
     input_path: str | os.PathLike,
-    pretokenizer: re.Pattern,
+    pretokenizer_name: str,
     special_tokens: list[str],
     debug: bool = False,
 ) -> dict[tuple, int]:
@@ -93,27 +127,27 @@ def pretokenize_corpus(
     with open(input_path, "rb") as f:
         boundaries = _find_chunk_boundaries(f, NUM_PROCESSES, b"<|endoftext|>")
 
-    # TODO: parallelize this.
-    # The following is a serial implementation, but you can parallelize this
-    # by sending each start/end pair to a set of processes.
-    tokens_counts: dict[tuple, int] = defaultdict(int)
+    # Prepare arguments for each worker process
+    chunk_args = []
+    for start, end in zip(boundaries[:-1], boundaries[1:]):
+        chunk_args.append((
+            input_path,
+            start,
+            end,
+            pretokenizer_name,
+            special_tokens,
+            debug
+        ))
 
-    with open(input_path, "rb") as f:
-        # Read the file in chunks based on the boundaries
-        # and count the occurrences of each pre-token
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            if debug:
-                #input("enter..")
-                print(f"Processing chunk from {start} to {end}: {chunk}...")
-            # Run pre-tokenization on your chunk and store the counts for each pre-token
-            mini_chunks = re.split("|".join([re.escape(token) for token in special_tokens]), chunk)
-            for mini_chunk in mini_chunks:
-                for match in pretokenizer.finditer(mini_chunk):
-                    token = match.group()
-                    byte_tuple = tuple(bytes([b]) for b in token.encode("utf-8"))
-                    tokens_counts[byte_tuple] += 1
+    # Process chunks in parallel using multiprocessing
+    with Pool(processes=NUM_PROCESSES) as pool:
+        chunk_results = pool.map(_process_chunk, chunk_args)
+
+    # Merge results from all processes
+    tokens_counts: dict[tuple, int] = defaultdict(int)
+    for chunk_tokens_counts in chunk_results:
+        for token_tuple, count in chunk_tokens_counts.items():
+            tokens_counts[token_tuple] += count
 
     if debug:
         print(f"Pretokenization results: {len(tokens_counts)} tokens. (Only show first 10)")
@@ -307,14 +341,14 @@ def train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    pretokenizer = get_pretokenizer(kwargs.get("pretokenizer_name", "default"))
+    pretokenizer_name = kwargs.get("pretokenizer_name", "default")
     debug = kwargs.get("debug", False)
     stop_at_merge_num = kwargs.get("stop_at_merge_num", None)
     if stop_at_merge_num is not None and not isinstance(stop_at_merge_num, int):
         raise ValueError("stop_at_merge_num must be an integer or None")
 
     # Pretokenize the corpus
-    tokens_counts: dict[tuple, int] = pretokenize_corpus(input_path, pretokenizer, special_tokens, debug)
+    tokens_counts: dict[tuple, int] = pretokenize_corpus(input_path, pretokenizer_name, special_tokens, debug)
 
     # Create the vocabulary and merges based on the token counts
     vocab: dict[bytes, int] = {bytes([i]): i for i in range(256)}  # Initial vocabulary with single-byte tokens
