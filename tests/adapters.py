@@ -9,6 +9,9 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 
+# Import from the proper cs336_basics package
+from cs336_basics.train_bpe import train_bpe
+
 
 def run_linear(
     d_in: int,
@@ -589,4 +592,9 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    # Call your actual train_bpe function from src/train_bpe.py
+    return train_bpe(
+        input_path=input_path, 
+        vocab_size=vocab_size, 
+        special_tokens=special_tokens, 
+        **kwargs)

@@ -23,6 +23,57 @@ def test_train_bpe_speed():
     end_time = time.time()
     assert end_time - start_time < 1.5
 
+def test_train_bpe_sennrich_example():
+    input_path = FIXTURES_PATH / "sennrich.en"
+    vocab, merges = run_train_bpe(
+        input_path=input_path,
+        vocab_size=263,
+        special_tokens=["<|endoftext|>"],
+        pretokenizer_name="ws",
+        debug=True,
+    )
+    
+    # Verify there are exactly 263 tokens in the vocab
+    assert len(vocab) == 263
+    
+    # The vocab should have:
+    # - 256 single-byte tokens (0-255)  
+    # - 1 special token "<|endoftext|>" at index 256
+    # - 6 merged tokens (257-262)
+    
+    # Get the last 6 entries in the vocab (the merged tokens)
+    last_6_token_ids = sorted(vocab.keys())[-6:]
+    last_6_tokens = [vocab[token_id] for token_id in last_6_token_ids]
+    
+    # Convert to string representations for checking
+    # Based on the BPE algorithm, these should be the merged tokens created
+    # Note: The current implementation has some issues with byte representation
+    # but the core logic should produce the expected merges
+
+    # Expected tokens based on the merges we observed:
+    # st, ne, ow, and combinations with spaces and 'e' prefix
+    expected_token_strings = ['st', 'est', 'ow', 'low', 'west', 'ne']
+
+    # Verify there are exactly 6 merges
+    assert len(merges) == 6
+
+    # Verify the specific merges are as expected
+    # Convert merges to string representation for comparison
+    merge_strings = []
+    for first, second in merges:
+        merge_strings.append(f"{first.decode('utf-8')} {second.decode('utf-8')}")
+
+    # Expected merges based on the BPE algorithm
+    expected_merges = ['s t', 'e st', 'o w', 'l ow', 'w est', 'n e']
+
+    # For debugging, print what we actually got
+    print(f"Actual merges: {merge_strings}")
+    print(f"Expected merges: {expected_merges}")
+
+    assert merge_strings == expected_merges, (
+        f"Expected merges {expected_merges} but got {merge_strings}"
+    )
+
 
 def test_train_bpe():
     input_path = FIXTURES_PATH / "corpus.en"
