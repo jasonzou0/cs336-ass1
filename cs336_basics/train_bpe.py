@@ -101,7 +101,6 @@ def train_bpe(
     pretokenizer = get_pretokenizer(kwargs.get("pretokenizer_name", "default"))
     debug = kwargs.get("debug", False)
 
-    # TODO: Handle the full list of special tokens
     boundaries = _find_chunk_boundaries(open(input_path, "rb"), NUM_PROCESSES, b"<|endoftext|>")
 
     # TODO: parallelize this.
@@ -116,12 +115,15 @@ def train_bpe(
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore")
             if debug:
-                print(f"Processing chunk from {start} to {end}: {chunk[:100]}...")
+                #input("enter..")
+                print(f"Processing chunk from {start} to {end}: {chunk}...")
             # Run pre-tokenization on your chunk and store the counts for each pre-token
-            for match in pretokenizer.finditer(chunk):
-                token = match.group()
-                byte_tuple = tuple(bytes([b]) for b in token.encode("utf-8"))
-                tokens_counts[byte_tuple] += 1
+            mini_chunks = re.split("|".join([re.escape(token) for token in special_tokens]), chunk)
+            for mini_chunk in mini_chunks:
+                for match in pretokenizer.finditer(mini_chunk):
+                    token = match.group()
+                    byte_tuple = tuple(bytes([b]) for b in token.encode("utf-8"))
+                    tokens_counts[byte_tuple] += 1
 
     if debug:
         print(f"Pretokenization results: {len(tokens_counts)} tokens. (Only show first 10)")
