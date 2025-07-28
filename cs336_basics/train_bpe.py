@@ -245,6 +245,7 @@ def perform_bpe_merges(
     tokens_counts: dict[tuple, int],
     vocab: dict[bytes, int],
     vocab_size: int,
+    stop_at_merge_num: int | None,
     debug: bool = False,
 ) -> tuple[dict[bytes, int], list[tuple[bytes, bytes]]]:
     """
@@ -263,7 +264,7 @@ def perform_bpe_merges(
     merges: list[tuple[bytes, bytes]] = []
 
     merge_step = 0
-    while len(vocab) < vocab_size:
+    while (stop_at_merge_num is None or merge_step < stop_at_merge_num) and len(vocab) < vocab_size:
         merge_step += 1
         
         # 1) Find the most common pair with debug print
@@ -308,6 +309,9 @@ def train_bpe(
     """
     pretokenizer = get_pretokenizer(kwargs.get("pretokenizer_name", "default"))
     debug = kwargs.get("debug", False)
+    stop_at_merge_num = kwargs.get("stop_at_merge_num", None)
+    if stop_at_merge_num is not None and not isinstance(stop_at_merge_num, int):
+        raise ValueError("stop_at_merge_num must be an integer or None")
 
     # Pretokenize the corpus
     tokens_counts: dict[tuple, int] = pretokenize_corpus(input_path, pretokenizer, special_tokens, debug)
@@ -327,7 +331,7 @@ def train_bpe(
     assert len(vocab) <= vocab_size, "Vocabulary size exceeds the specified limit"
 
     # Perform BPE merges
-    vocab, merges = perform_bpe_merges(tokens_counts, vocab, vocab_size, debug)
+    vocab, merges = perform_bpe_merges(tokens_counts, vocab, vocab_size, stop_at_merge_num, debug)
 
     # Ensure the vocabulary is limited to the specified size
     if len(vocab) > vocab_size:
