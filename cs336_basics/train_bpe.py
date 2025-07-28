@@ -71,36 +71,24 @@ def get_pretokenizer(tokenizer_name: str="default") -> re.Pattern:
     else:
         raise ValueError(f"Unknown tokenizer: {tokenizer_name}")
 
-def train_bpe(
+def pretokenize_corpus(
     input_path: str | os.PathLike,
-    vocab_size: int,
+    pretokenizer: re.Pattern,
     special_tokens: list[str],
-    **kwargs,
-) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    """Given the path to an input corpus, run train a BPE tokenizer and
-    output its vocabulary and merges.
-
+    debug: bool = False,
+) -> dict[tuple, int]:
+    """
+    Pretokenize a corpus and return token counts.
+    
     Args:
-        input_path (str | os.PathLike): Path to BPE tokenizer training data.
-        vocab_size (int): Total number of items in the tokenizer's vocabulary (including special tokens).
-        special_tokens (list[str]): A list of string special tokens to be added to the tokenizer vocabulary.
-            These strings will never be split into multiple tokens, and will always be
-            kept as a single token. If these special tokens occur in the `input_path`,
-            they are treated as any other string.
+        input_path: Path to the input corpus file
+        pretokenizer: Compiled regex pattern for pretokenization
+        special_tokens: List of special tokens to handle separately
+        debug: Whether to print debug information
 
     Returns:
-        tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-            vocab:
-                The trained tokenizer vocabulary, a mapping from int (token ID in the vocabulary)
-                to bytes (token bytes)
-            merges:
-                BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
-                representing that <token1> was merged with <token2>.
-                Merges are ordered by order of creation.
+        Dictionary mapping tuples of bytes to their counts
     """
-    pretokenizer = get_pretokenizer(kwargs.get("pretokenizer_name", "default"))
-    debug = kwargs.get("debug", False)
-
     with open(input_path, "rb") as f:
         boundaries = _find_chunk_boundaries(f, NUM_PROCESSES, b"<|endoftext|>")
 
@@ -131,23 +119,33 @@ def train_bpe(
         for i, (token_tuple, count) in enumerate(tokens_counts.items()):
             token_strs = [_decode_bytes_debug(token) for token in token_tuple]
             print(f"  {i+1}. '{token_strs}' (count: {count})")
+            if i >= 9:  # Only show first 10
+                break
         print()
+    
+    return tokens_counts
 
-    # Create the vocabulary and merges based on the token counts
-    vocab: dict[bytes, int] = {bytes([i]): i for i in range(256)}  # Initial vocabulary with single-byte tokens
-    token_id = len(vocab)  # Start token ID after single-byte tokens
+def perform_bpe_merges(
+    tokens_counts: dict[tuple, int],
+    vocab: dict[bytes, int],
+    vocab_size: int,
+    debug: bool = False,
+) -> tuple[dict[bytes, int], list[tuple[bytes, bytes]]]:
+    """
+    Perform BPE merges on the token counts to build vocabulary and merges.
+
+    Args:
+        tokens_counts: Dictionary mapping tuples of bytes to their counts
+        vocab: Initial vocabulary (should contain single-byte tokens and special tokens)
+        vocab_size: Target vocabulary size
+        debug: Whether to print debug information
+
+    Returns:
+        Tuple of (final_vocab, merges_list)
+    """
+    token_id = max(vocab.values()) + 1 if vocab else 0
     merges: list[tuple[bytes, bytes]] = []
 
-    # Add special tokens to the vocabulary next
-    for token in special_tokens:
-        token_bytes = token.encode("utf-8")
-        if token_bytes not in vocab:
-            vocab[token_bytes] = token_id
-            token_id += 1
-
-    assert len(vocab) <= vocab_size, "Vocabulary size exceeds the specified limit"
-
-    # TODO: add debug information for each merging step
     merge_step = 0
     while len(vocab) < vocab_size:
         merge_step += 1
@@ -197,17 +195,74 @@ def train_bpe(
                 continue
             new_bytes_tuple = []
             i = 0
+            merge_happened = False
             while i < len(bytes_tuple):
                 if i < len(bytes_tuple) - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
                     new_bytes_tuple.append(new_token)
+                    merge_happened = True
                     i += 2
                 else:
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
-            # TODO: avoid allocationg new memory if no merge happened
-            new_tokens_counts[tuple(new_bytes_tuple)] = count
+            if merge_happened:
+                new_tokens_counts[tuple(new_bytes_tuple)] = count
+            else:
+                # If no merge happened, keep the original tuple
+                new_tokens_counts[bytes_tuple] = count
 
         tokens_counts = new_tokens_counts
+
+    return vocab, merges
+
+def train_bpe(
+    input_path: str | os.PathLike,
+    vocab_size: int,
+    special_tokens: list[str],
+    **kwargs,
+) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    """Given the path to an input corpus, run train a BPE tokenizer and
+    output its vocabulary and merges.
+
+    Args:
+        input_path (str | os.PathLike): Path to BPE tokenizer training data.
+        vocab_size (int): Total number of items in the tokenizer's vocabulary (including special tokens).
+        special_tokens (list[str]): A list of string special tokens to be added to the tokenizer vocabulary.
+            These strings will never be split into multiple tokens, and will always be
+            kept as a single token. If these special tokens occur in the `input_path`,
+            they are treated as any other string.
+
+    Returns:
+        tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+            vocab:
+                The trained tokenizer vocabulary, a mapping from int (token ID in the vocabulary)
+                to bytes (token bytes)
+            merges:
+                BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
+                representing that <token1> was merged with <token2>.
+                Merges are ordered by order of creation.
+    """
+    pretokenizer = get_pretokenizer(kwargs.get("pretokenizer_name", "default"))
+    debug = kwargs.get("debug", False)
+
+    # Pretokenize the corpus
+    tokens_counts: dict[tuple, int] = pretokenize_corpus(input_path, pretokenizer, special_tokens, debug)
+
+    # Create the vocabulary and merges based on the token counts
+    vocab: dict[bytes, int] = {bytes([i]): i for i in range(256)}  # Initial vocabulary with single-byte tokens
+    token_id = len(vocab)  # Start token ID after single-byte tokens
+    merges: list[tuple[bytes, bytes]] = []
+
+    # Add special tokens to the vocabulary next
+    for token in special_tokens:
+        token_bytes = token.encode("utf-8")
+        if token_bytes not in vocab:
+            vocab[token_bytes] = token_id
+            token_id += 1
+
+    assert len(vocab) <= vocab_size, "Vocabulary size exceeds the specified limit"
+
+    # Perform BPE merges
+    vocab, merges = perform_bpe_merges(tokens_counts, vocab, vocab_size, debug)
 
     # Ensure the vocabulary is limited to the specified size
     if len(vocab) > vocab_size:
