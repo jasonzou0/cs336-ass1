@@ -133,7 +133,7 @@ def train_bpe(
         print()
 
     # Create the vocabulary and merges based on the token counts
-    vocab: dict[bytes, int] = {chr(i).encode("utf-8"): i for i in range(256)}  # Initial vocabulary with single-byte tokens
+    vocab: dict[bytes, int] = {bytes([i]): i for i in range(256)}  # Initial vocabulary with single-byte tokens
     token_id = len(vocab)  # Start token ID after single-byte tokens
     merges: list[tuple[bytes, bytes]] = []
 

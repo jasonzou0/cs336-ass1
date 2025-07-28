@@ -30,7 +30,6 @@ def test_train_bpe_sennrich_example():
         vocab_size=263,
         special_tokens=["<|endoftext|>"],
         pretokenizer_name="ws",
-        debug=True,
     )
     
     # Verify there are exactly 263 tokens in the vocab
@@ -74,6 +73,10 @@ def test_train_bpe_sennrich_example():
         f"Expected merges {expected_merges} but got {merge_strings}"
     )
 
+def debug_bytes_array(b_arr: list[bytes]) -> list[str]:
+    def _decode_bytes(b: bytes) -> str:
+        return b.decode("utf-8", errors="replace")
+    return [f"{b} -> {_decode_bytes(b)}" for b in b_arr]
 
 def test_train_bpe():
     input_path = FIXTURES_PATH / "corpus.en"
