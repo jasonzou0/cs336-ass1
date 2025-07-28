@@ -125,6 +125,121 @@ def pretokenize_corpus(
     
     return tokens_counts
 
+def _find_most_common_pair(
+    tokens_counts: dict[tuple, int],
+    merge_step: int,
+    debug: bool = False,
+) -> tuple[bytes, bytes] | None:
+    """
+    Find the most common byte pair in the token counts with optional debug printing.
+    
+    Args:
+        tokens_counts: Dictionary mapping tuples of bytes to their counts
+        merge_step: Current merge step number (for debug output)
+        debug: Whether to print debug information
+        
+    Returns:
+        Most common byte pair, or None if no pairs found
+    """
+    # Count the occurrences of each pair of bytes in the token counts
+    bytepair_counts: dict[tuple[bytes, bytes], int] = defaultdict(int)
+
+    for bytes_tuple, count in tokens_counts.items():
+        if len(bytes_tuple) == 1:
+            continue  # Skip single-byte tokens
+        for i in range(len(bytes_tuple) - 1):
+            pair = (bytes_tuple[i], bytes_tuple[i + 1])
+            bytepair_counts[pair] += count
+
+    # Find the most common byte pair
+    if not bytepair_counts:
+        return None  # No more pairs to merge
+
+    # TODO: double check if the tie breaker function is implemented correctly.
+    most_common_pair = max(bytepair_counts, key=lambda bytepair: (bytepair_counts[bytepair], bytepair))
+
+    if debug:
+        print(f"Merge step {merge_step}:")
+        print(f"  Total byte pairs found: {len(bytepair_counts)}")
+        for pair, count in bytepair_counts.items():
+            pair_str= _decode_bytes_debug(pair[0]) + ", " + _decode_bytes_debug(pair[1])
+            print(f"    {pair_str} (count: {count})")
+        merged_token_str = _decode_bytes_debug(most_common_pair[0] + most_common_pair[1])
+        print(f"  Selected merge: {most_common_pair} -> '{merged_token_str}' (count: {bytepair_counts[most_common_pair]})")
+        print()
+
+    return most_common_pair
+
+def _update_vocab_with_merge(
+    most_common_pair: tuple[bytes, bytes],
+    vocab: dict[bytes, int],
+    token_id: int,
+    merges: list[tuple[bytes, bytes]],
+) -> tuple[bytes, int]:
+    """
+    Form new token from merge pair and update vocabulary.
+    
+    Args:
+        most_common_pair: The pair of bytes to merge
+        vocab: Current vocabulary dictionary
+        token_id: Next available token ID
+        merges: List of merges to append to
+        
+    Returns:
+        Tuple of (new_token, updated_token_id)
+    """
+    # Merge the most common pair
+    merges.append(most_common_pair)
+
+    # Create a new token by merging the two bytes
+    first, second = most_common_pair
+    new_token = first + second
+    if new_token not in vocab:
+        vocab[new_token] = token_id
+        token_id += 1
+    
+    return new_token, token_id
+
+def _update_tokens_counts(
+    tokens_counts: dict[tuple, int],
+    most_common_pair: tuple[bytes, bytes],
+    new_token: bytes,
+) -> dict[tuple, int]:
+    """
+    Update token counts by merging occurrences of the most common pair.
+    
+    Args:
+        tokens_counts: Current token counts dictionary
+        most_common_pair: The pair of bytes that was merged
+        new_token: The new token created from the merge
+        
+    Returns:
+        Updated token counts dictionary
+    """
+    # Update the token counts
+    new_tokens_counts = {}
+    for bytes_tuple, count in list(tokens_counts.items()):
+        if len(bytes_tuple) == 1:
+            continue
+        new_bytes_tuple = []
+        i = 0
+        merge_happened = False
+        while i < len(bytes_tuple):
+            if i < len(bytes_tuple) - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
+                new_bytes_tuple.append(new_token)
+                merge_happened = True
+                i += 2
+            else:
+                new_bytes_tuple.append(bytes_tuple[i])
+                i += 1
+        if merge_happened:
+            new_tokens_counts[tuple(new_bytes_tuple)] = count
+        else:
+            # If no merge happened, keep the original tuple
+            new_tokens_counts[bytes_tuple] = count
+
+    return new_tokens_counts
+
 def perform_bpe_merges(
     tokens_counts: dict[tuple, int],
     vocab: dict[bytes, int],
@@ -150,67 +265,16 @@ def perform_bpe_merges(
     while len(vocab) < vocab_size:
         merge_step += 1
         
-        # Count the occurrences of each pair of bytes in the token counts
-        bytepair_counts: dict[tuple[bytes, bytes], int] = defaultdict(int)
-
-        for bytes_tuple, count in tokens_counts.items():
-            if len(bytes_tuple) == 1:
-                continue  # Skip single-byte tokens
-            for i in range(len(bytes_tuple) - 1):
-                pair = (bytes_tuple[i], bytes_tuple[i + 1])
-                bytepair_counts[pair] += count
-
-        # Find the most common byte pair
-        if not bytepair_counts:
+        # 1) Find the most common pair with debug print
+        most_common_pair = _find_most_common_pair(tokens_counts, merge_step, debug)
+        if most_common_pair is None:
             break  # No more pairs to merge
-
-        # TODO: double check if the tie breaker function is implemented correctly.
-        most_common_pair = max(bytepair_counts, key=lambda bytepair: (bytepair_counts[bytepair], bytepair))
-
-        if debug:
-            print(f"Merge step {merge_step}:")
-            print(f"  Total byte pairs found: {len(bytepair_counts)}")
-            for pair, count in bytepair_counts.items():
-                pair_str= _decode_bytes_debug(pair[0]) + ", " + _decode_bytes_debug(pair[1])
-                print(f"    {pair_str} (count: {count})")
-            merged_token_str = _decode_bytes_debug(most_common_pair[0] + most_common_pair[1])
-            print(f"  Selected merge: {most_common_pair} -> '{merged_token_str}' (count: {bytepair_counts[most_common_pair]})")
-            print()
-
-        # TODO: implement indexing of tokens_counts to avoid the need to iterate through it
-        # Merge the most common pair
-        merges.append(most_common_pair)
-
-        # Create a new token by merging the two bytes
-        first, second = most_common_pair
-        new_token = first + second
-        if new_token not in vocab:
-            vocab[new_token] = token_id
-            token_id += 1
-
-        # Update the token counts
-        new_tokens_counts = {}
-        for bytes_tuple, count in list(tokens_counts.items()):
-            if len(bytes_tuple) == 1:
-                continue
-            new_bytes_tuple = []
-            i = 0
-            merge_happened = False
-            while i < len(bytes_tuple):
-                if i < len(bytes_tuple) - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
-                    new_bytes_tuple.append(new_token)
-                    merge_happened = True
-                    i += 2
-                else:
-                    new_bytes_tuple.append(bytes_tuple[i])
-                    i += 1
-            if merge_happened:
-                new_tokens_counts[tuple(new_bytes_tuple)] = count
-            else:
-                # If no merge happened, keep the original tuple
-                new_tokens_counts[bytes_tuple] = count
-
-        tokens_counts = new_tokens_counts
+        
+        # 2) Form new token and update vocab
+        new_token, token_id = _update_vocab_with_merge(most_common_pair, vocab, token_id, merges)
+        
+        # 3) Update / merge the tokens_counts data structure
+        tokens_counts = _update_tokens_counts(tokens_counts, most_common_pair, new_token)
 
     return vocab, merges
 
