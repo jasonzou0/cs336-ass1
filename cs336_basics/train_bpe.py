@@ -6,7 +6,9 @@ from multiprocessing import Pool
 
 import regex as re
 
-NUM_PROCESSES = 4  # Number of processes to use for parallel processing
+def get_num_processes() -> int:
+    """Get the number of processes to use from environment variable or default to 4."""
+    return int(os.environ.get("NUM_PROCESS", 4))
 
 def _find_chunk_boundaries(
     file: BinaryIO,
@@ -124,8 +126,11 @@ def pretokenize_corpus(
     Returns:
         Dictionary mapping tuples of bytes to their counts
     """
+    num_processes = get_num_processes()
+    print(f"Using {num_processes} processes for BPE training")
+
     with open(input_path, "rb") as f:
-        boundaries = _find_chunk_boundaries(f, NUM_PROCESSES, b"<|endoftext|>")
+        boundaries = _find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
     # Prepare arguments for each worker process
     chunk_args = []
@@ -140,7 +145,7 @@ def pretokenize_corpus(
         ))
 
     # Process chunks in parallel using multiprocessing
-    with Pool(processes=NUM_PROCESSES) as pool:
+    with Pool(processes=num_processes) as pool:
         chunk_results = pool.map(_process_chunk, chunk_args)
 
     # Merge results from all processes
