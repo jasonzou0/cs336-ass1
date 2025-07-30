@@ -185,8 +185,6 @@ def _find_most_common_pair(
     bytepair_counts: dict[tuple[bytes, bytes], int] = defaultdict(int)
 
     for bytes_tuple, count in tokens_counts.items():
-        if len(bytes_tuple) == 1:
-            continue  # Skip single-byte tokens
         for i in range(len(bytes_tuple) - 1):
             pair = (bytes_tuple[i], bytes_tuple[i + 1])
             bytepair_counts[pair] += count
@@ -259,13 +257,14 @@ def _update_tokens_counts(
     # Update the token counts
     new_tokens_counts = {}
     for bytes_tuple, count in list(tokens_counts.items()):
-        if len(bytes_tuple) == 1:
+        bytes_tuple_count = len(bytes_tuple)
+        if bytes_tuple_count == 1:
             continue
         new_bytes_tuple = []
         i = 0
         merge_happened = False
-        while i < len(bytes_tuple):
-            if i < len(bytes_tuple) - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
+        while i < bytes_tuple_count:
+            if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
                 new_bytes_tuple.append(new_token)
                 merge_happened = True
                 i += 2
