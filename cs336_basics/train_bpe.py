@@ -196,8 +196,9 @@ def _find_most_common_pair(
     # TODO: double check if the tie breaker function is implemented correctly.
     most_common_pair = max(bytepair_counts, key=lambda bytepair: (bytepair_counts[bytepair], bytepair))
 
+    print(f"Merge step {merge_step} done: Most common pair is {most_common_pair} with count {bytepair_counts[most_common_pair]}")
+
     if debug:
-        print(f"Merge step {merge_step}:")
         print(f"  Total byte pairs found: {len(bytepair_counts)}")
         for pair, count in bytepair_counts.items():
             pair_str= _decode_bytes_debug(pair[0]) + ", " + _decode_bytes_debug(pair[1])
