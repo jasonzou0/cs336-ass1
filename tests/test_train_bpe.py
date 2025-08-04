@@ -39,19 +39,11 @@ def test_train_bpe_sennrich_example():
     # - 256 single-byte tokens (0-255)  
     # - 1 special token "<|endoftext|>" at index 256
     # - 6 merged tokens (257-262)
-    
-    # Get the last 6 entries in the vocab (the merged tokens)
-    last_6_token_ids = sorted(vocab.keys())[-6:]
-    last_6_tokens = [vocab[token_id] for token_id in last_6_token_ids]
-    
-    # Convert to string representations for checking
-    # Based on the BPE algorithm, these should be the merged tokens created
-    # Note: The current implementation has some issues with byte representation
-    # but the core logic should produce the expected merges
 
     # Expected tokens based on the merges we observed:
     # st, ne, ow, and combinations with spaces and 'e' prefix
     expected_token_strings = ['st', 'est', 'ow', 'low', 'west', 'ne']
+    assert list(vocab.values())[-6:] == [token.encode('utf-8') for token in expected_token_strings]
 
     # Verify there are exactly 6 merges
     assert len(merges) == 6

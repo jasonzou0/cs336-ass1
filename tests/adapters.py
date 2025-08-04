@@ -547,6 +547,7 @@ def get_tokenizer(
     vocab: dict[int, bytes],
     merges: list[tuple[bytes, bytes]],
     special_tokens: list[str] | None = None,
+    pretokenizer_name: str ="default",
 ) -> Any:
     """Given a vocabulary, a list of merges, and a list of special tokens,
     return a BPE tokenizer that uses the provided vocab, merges, and special tokens.
@@ -593,9 +594,6 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    # Time the execution
-    start_time = time.time()
-    
     # Call your actual train_bpe function from src/train_bpe.py
     vocab, merges = train_bpe(
         input_path=input_path, 
@@ -603,14 +601,10 @@ def run_train_bpe(
         special_tokens=special_tokens, 
         **kwargs)
     
-    end_time = time.time()
-    execution_time = end_time - start_time
-    
     # Log the results
     actual_vocab_size = len(vocab)
     print(f"BPE Training completed:")
     print(f"  Input vocab size: {vocab_size}")
     print(f"  Final vocab size: {actual_vocab_size}")
-    print(f"  Execution time: {execution_time:.2f} seconds")
     
     return vocab, merges

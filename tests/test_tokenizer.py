@@ -9,7 +9,7 @@ import psutil
 import pytest
 import tiktoken
 
-from .adapters import get_tokenizer
+from .adapters import get_tokenizer, run_train_bpe
 from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
 
 VOCAB_PATH = FIXTURES_PATH / "gpt2_vocab.json"
@@ -72,6 +72,34 @@ def get_tokenizer_from_vocab_merges_path(
         for merge_token_1, merge_token_2 in gpt2_bpe_merges
     ]
     return get_tokenizer(vocab, merges, special_tokens)
+
+
+def test_train_and_tokenize_sennrich():
+    input_path = FIXTURES_PATH / "sennrich.en"
+    vocab, merges = run_train_bpe(
+        input_path=input_path,
+        vocab_size=263,
+        special_tokens=["<|endoftext|>"],
+        pretokenizer_name="ws",
+    )
+
+    # Verify there are exactly 263 tokens in the vocab
+    assert len(vocab) == 263
+    # Expected tokens based on the merges we observed:
+    # st, ne, ow, and combinations with spaces and 'e' prefix
+    expected_token_strings = ['st', 'est', 'ow', 'low', 'west', 'ne']
+    assert list(vocab.values())[-6:] == [token.encode('utf-8') for token in expected_token_strings]
+    vocab_to_id = {v: k for k, v in vocab.items()}
+    assert [vocab_to_id[tok.encode()] for tok in expected_token_strings] == list(range(257, 263))
+
+    tokenizer = get_tokenizer(
+        vocab=vocab,
+        merges=merges,
+        special_tokens=["<|endoftext|>"],
+        pretokenizer_name="ws",
+    )
+    assert tokenizer.encode("newest") == [vocab_to_id[tok.encode()] for tok in ['ne', 'west']]
+    assert tokenizer.encode("wildwest") == [vocab_to_id[tok.encode()] for tok in ['w', 'i', 'l', 'd', 'west']]
 
 
 def test_roundtrip_empty():
