@@ -15,6 +15,7 @@ class Tokenizer(object):
         pretokenizer_name: str ="default",
         **kwargs,
     ):
+        self._id_to_vocab: dict[int, bytes] = vocab
         self._vocab: dict[bytes, int] = {v: k for k, v in vocab.items()}
         self._merges: dict[tuple[bytes, bytes], int] = {
             bytes_pair: idx for idx, bytes_pair in enumerate(merges)
@@ -92,4 +93,4 @@ class Tokenizer(object):
         return NotImplementedError
 
     def decode(self, ids: list[int]) -> str:
-        raise NotImplementedError
+        return b''.join([self._id_to_vocab[id] for id in ids]).decode("utf-8", errors="replace")
