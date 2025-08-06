@@ -547,8 +547,7 @@ def run_load_checkpoint(
 def get_tokenizer(
     vocab: dict[int, bytes],
     merges: list[tuple[bytes, bytes]],
-    special_tokens: list[str] | None = None,
-    pretokenizer_name: str ="default",
+    special_tokens: list[str],
     **kwargs,
 ) -> Any:
     """Given a vocabulary, a list of merges, and a list of special tokens,
@@ -570,7 +569,6 @@ def get_tokenizer(
         vocab=vocab,
         merges=merges,
         special_tokens=special_tokens,
-        pretokenizer_name=pretokenizer_name,
         **kwargs,
     )
 

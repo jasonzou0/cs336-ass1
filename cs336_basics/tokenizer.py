@@ -11,8 +11,7 @@ class Tokenizer(object):
         self, 
         vocab: dict[int, bytes], 
         merges: list[tuple[bytes, bytes]], 
-        special_tokens: list[str] | None = None,
-        pretokenizer_name: str ="default",
+        special_tokens: list[str],
         **kwargs,
     ):
         self._id_to_vocab: dict[int, bytes] = vocab
@@ -21,6 +20,7 @@ class Tokenizer(object):
             bytes_pair: idx for idx, bytes_pair in enumerate(merges)
         }
         self._special_tokens = special_tokens if special_tokens is not None else []
+        pretokenizer_name = kwargs.get("pretokenizer_name", "default")
         self._pretokenizer = get_pretokenizer(pretokenizer_name)
         self._debug = kwargs.get("debug", False)
 
@@ -45,6 +45,7 @@ class Tokenizer(object):
 
         return result
 
+    # TODO: consider caching the result of this api call for frequent tokens.
     def _encode_one_tuple(self, bytes_tuple: tuple) -> list[int]:
         """
         Encodes a single token into its corresponding ID using the vocabulary.
@@ -56,17 +57,24 @@ class Tokenizer(object):
         """
         while len(bytes_tuple) > 1:
             merge_found = False
+            # saves the position to merge, its merge index, and the merged token
+            best_merge: tuple[int, int, bytes] = (-1, float('inf'), bytes())
             for i in range(len(bytes_tuple) - 1):
                 pair = (bytes_tuple[i], bytes_tuple[i + 1])
                 # TODO: decide if we need to consider positions of merges and only apply the first merge found.
                 if pair in self._merges:
                     merged_token: bytes = pair[0] + pair[1]
-                    bytes_tuple = bytes_tuple[:i] + (merged_token,) + bytes_tuple[i + 2:]
                     merge_found = True
-                    if self._debug:
-                        print(f"Merging {pair} into {merged_token}, new tuple: {bytes_tuple}")
-                    break
-            if not merge_found:
+                    merge_index = self._merges[pair]
+                    # Check if this merge is better than the best found so far
+                    if merge_index < best_merge[1]:
+                        best_merge = (i, merge_index, merged_token)
+            if merge_found:
+                i, _, merged_token = best_merge
+                if self._debug:
+                    print(f"Merging {bytes_tuple[i]} and {bytes_tuple[i + 1]} at index {i} into {merged_token}")
+                bytes_tuple = bytes_tuple[:i] + (merged_token,) + bytes_tuple[i + 2:]
+            else:
                 if self._debug:
                     print(f"No more merges found for {bytes_tuple}, breaking.")
                 break

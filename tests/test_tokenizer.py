@@ -40,6 +40,7 @@ def get_tokenizer_from_vocab_merges_path(
     vocab_path: str | os.PathLike,
     merges_path: str | os.PathLike,
     special_tokens: list[str] | None = None,
+    **kwargs,
 ):
     gpt2_byte_decoder = {v: k for k, v in gpt2_bytes_to_unicode().items()}
     with open(vocab_path) as vocab_f:
@@ -71,7 +72,7 @@ def get_tokenizer_from_vocab_merges_path(
         )
         for merge_token_1, merge_token_2 in gpt2_bpe_merges
     ]
-    return get_tokenizer(vocab, merges, special_tokens)
+    return get_tokenizer(vocab, merges, special_tokens, **kwargs)
 
 
 def test_train_and_tokenize_sennrich():
@@ -204,7 +205,8 @@ def test_roundtrip_ascii_string():
 def test_ascii_string_matches_tiktoken():
     reference_tokenizer = tiktoken.get_encoding("gpt2")
     tokenizer = get_tokenizer_from_vocab_merges_path(
-        vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"]
+        vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"],
+        debug=True,
     )
     test_string = "Hello, how are you?"
 
