@@ -35,7 +35,9 @@ class Tokenizer(object):
         result: list[tuple] = []
 
         # Use capturing group in split to keep special tokens in the result
-        special_pattern = "|".join([re.escape(token) for token in self._special_tokens])
+        # Sort special tokens by length (descending) to match longest first for overlapping cases
+        sorted_special_tokens = sorted(self._special_tokens, key=len, reverse=True)
+        special_pattern = "|".join([re.escape(token) for token in sorted_special_tokens])
         chunks = re.split(f"({special_pattern})", text)
 
         for chunk in chunks:
