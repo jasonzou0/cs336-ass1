@@ -1,9 +1,7 @@
 import pickle
-
 import regex as re
 
 from typing import Iterable, Iterator
-
 from .train_bpe import get_pretokenizer
 
 class Tokenizer(object):
@@ -36,12 +34,23 @@ class Tokenizer(object):
         """
         result: list[tuple] = []
 
-        chunks = re.split("|".join([re.escape(token) for token in self._special_tokens]), text)
+        # Use capturing group in split to keep special tokens in the result
+        special_pattern = "|".join([re.escape(token) for token in self._special_tokens])
+        chunks = re.split(f"({special_pattern})", text)
+
         for chunk in chunks:
-            for match in self._pretokenizer.finditer(chunk):
-                token = match.group()
-                byte_tuple = tuple(bytes([b]) for b in token.encode("utf-8"))
+            if not chunk:  # Skip empty chunks
+                continue
+            elif chunk in self._special_tokens:
+                # Special token: add as single tuple with its bytes representation
+                byte_tuple = (chunk.encode("utf-8"),)
                 result.append(byte_tuple)
+            else:
+                # Regular text: process with pretokenizer
+                for match in self._pretokenizer.finditer(chunk):
+                    token = match.group()
+                    byte_tuple = tuple(bytes([b]) for b in token.encode("utf-8"))
+                    result.append(byte_tuple)
 
         return result
 
@@ -90,11 +99,9 @@ class Tokenizer(object):
         return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
-        result: list[int] = []
-        for pretoken in self._pretokenize(text):
-            token_ids = self._encode_one_tuple(pretoken)
-            result.extend(token_ids)
-        return result
+        encoding_per_pretoken = (self._encode_one_tuple(pretoken) for pretoken in self._pretokenize(text))
+        # Flatten the list of lists into a single list
+        return [item for sublist in encoding_per_pretoken for item in sublist]
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         # TODO: write a different, streaming version of, _pretokenize().
