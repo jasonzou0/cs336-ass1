@@ -106,8 +106,9 @@ class Tokenizer(object):
         return [item for sublist in encoding_per_pretoken for item in sublist]
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        # TODO: write a different, streaming version of, _pretokenize().
-        return NotImplementedError
+        for text in iterable:
+            for encoded_id in self.encode(text):
+                yield encoded_id
 
     def decode(self, ids: list[int]) -> str:
         return b''.join([self._id_to_vocab[id] for id in ids]).decode("utf-8", errors="replace")
