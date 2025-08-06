@@ -12,6 +12,7 @@ from torch import Tensor
 
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
+from cs336_basics.tokenizer import Tokenizer
 
 
 def run_linear(
@@ -548,6 +549,7 @@ def get_tokenizer(
     merges: list[tuple[bytes, bytes]],
     special_tokens: list[str] | None = None,
     pretokenizer_name: str ="default",
+    **kwargs,
 ) -> Any:
     """Given a vocabulary, a list of merges, and a list of special tokens,
     return a BPE tokenizer that uses the provided vocab, merges, and special tokens.
@@ -564,7 +566,13 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return Tokenizer(
+        vocab=vocab,
+        merges=merges,
+        special_tokens=special_tokens,
+        pretokenizer_name=pretokenizer_name,
+        **kwargs,
+    )
 
 
 def run_train_bpe(

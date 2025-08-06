@@ -97,6 +97,7 @@ def test_train_and_tokenize_sennrich():
         merges=merges,
         special_tokens=["<|endoftext|>"],
         pretokenizer_name="ws",
+        # debug=True,
     )
     assert tokenizer.encode("newest") == [vocab_to_id[tok.encode()] for tok in ['ne', 'west']]
     assert tokenizer.encode("wildwest") == [vocab_to_id[tok.encode()] for tok in ['w', 'i', 'l', 'd', 'west']]
