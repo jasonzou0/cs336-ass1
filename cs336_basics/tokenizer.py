@@ -38,9 +38,11 @@ class Tokenizer(object):
         # Sort special tokens by length (descending) to match longest first for overlapping cases
         sorted_special_tokens = sorted(self._special_tokens, key=len, reverse=True)
         special_pattern = "|".join([re.escape(token) for token in sorted_special_tokens])
-        chunks = re.split(f"({special_pattern})", text)
+        chunks = re.split(f"({special_pattern})", text) if self._special_tokens else [text]
 
         for chunk in chunks:
+            if self._debug:
+                print(f"Pretokenizing chunk: {chunk!r}")
             if not chunk:  # Skip empty chunks
                 continue
             elif chunk in self._special_tokens:
