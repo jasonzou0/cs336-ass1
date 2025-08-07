@@ -1,0 +1,14 @@
+uv run scripts/train_bpe_cli.py --input-path data/TinyStoriesV2-GPT4-train.txt --vocab-size 1000 --output-dir output/tonytest_tiny1k_$(date +%F_%H%M%S) --profile
+
+uv run scripts/train_bpe_cli.py --input-path ./data/owt_train.txt --vocab-size 36000 --output-dir output/tonytest_owt36k_$(date +%F) --profile --load-tokens-counts
+uv run scripts/train_bpe_cli.py --input-path ./data/owt_train.txt --vocab-size 36000 --output-dir output/tonytest_owt36k_$(date +%F_%H%M%S) --profile
+uv run scripts/train_bpe_cli.py --input-path ./data/owt_train.txt --vocab-size 1000 --output-dir output/tonytest_owt1k_$(date +%F_%H%M%S) --profile
+
+uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-size 300 --output-dir output/tonytest_unit_$(date +%F_%H%M%S) --profile
+uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-size 300 --output-dir output/tonytest_unit --profile
+
+uv run pytest tests/test_train_bpe.py
+uv run pytest tests/test_train_bpe.py::test_train_bpe_speed
+uv run pytest tests/test_train_bpe.py::test_train_bpe_special_tokens
+uv run pytest tests/test_train_bpe.py::test_train_bpe_sennrich_example
+uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-size 256 --output-dir output/tonytest_small --profile --debug

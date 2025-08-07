@@ -126,6 +126,18 @@ def main():
         help="Enable profiling of the training process and generate SVG visualization"
     )
 
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debugging output"
+    )
+
+    parser.add_argument(
+        "--load-tokens-counts", 
+        action="store_true",
+        help="Try to load the pre-tokenized dictionary from pickle file"
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -173,6 +185,9 @@ def main():
             vocab_size=args.vocab_size,
             special_tokens=special_tokens,
             stop_at_merge_num=args.stop_at_merge_num,
+            debug=args.debug,
+            output_dir=args.output_dir,
+            load_tokens_counts=args.load_tokens_counts
         )
         execution_time = time.time() - start_time
         actual_vocab_size = len(vocab)

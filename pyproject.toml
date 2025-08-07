@@ -20,6 +20,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "wandb>=0.19.7",
     "ty>=0.0.1a16",
+    "gprof2dot>=2025.4.14",
 ]
 
 [build-system]
@@ -32,7 +33,6 @@ module-root = ""
 
 [tool.uv]
 package = true
-python-preference = "managed"
 
 [tool.pytest.ini_options]
 log_cli = true
