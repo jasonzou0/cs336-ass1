@@ -456,7 +456,7 @@ def perform_bpe_merges(
         merge_step += 1
         
         # adding debug print
-        if len(vocab) % int(vocab_size/10) == 0 or merge_step % 100==0:
+        if merge_step<10 or len(vocab) % int(vocab_size/10) == 0 or merge_step % 100==0:
             print(f"--- {datetime.datetime.now()} - {int(len(vocab)/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
         # if len(vocab) % int(vocab_size/100) == 0 or merge_step % 100==0:
             # print(f"--- {datetime.datetime.now()} - {int(len(vocab)/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
@@ -475,59 +475,6 @@ def perform_bpe_merges(
         tokens_counts,saved_cache = _update_tokens_counts(tokens_counts, most_common_pair, new_token, saved_cache)
         # tokens_counts = _update_tokens_counts_mp(tokens_counts, most_common_pair, new_token)
 
-
-    return vocab, merges
-
-def perform_bpe_merges_new(
-    tokens_counts: dict[tuple, int],
-    vocab: dict[bytes, int],
-    vocab_size: int,
-    stop_at_merge_num: int | None,
-    debug: bool = False,
-) -> tuple[dict[bytes, int], list[tuple[bytes, bytes]]]:
-    """
-    Perform BPE merges on the token counts to build vocabulary and merges.
-
-    Args:
-        tokens_counts: Dictionary mapping tuples of bytes to their counts
-        vocab: Initial vocabulary (should contain single-byte tokens and special tokens)
-        vocab_size: Target vocabulary size
-        debug: Whether to print debug information
-
-    Returns:
-        Tuple of (final_vocab, merges_list)
-    """
-    token_id = max(vocab.values()) + 1 if vocab else 0
-    merges: list[tuple[bytes, bytes]] = []
-
-    merge_step = 0
-    while (stop_at_merge_num is None or merge_step < stop_at_merge_num) and len(vocab) < vocab_size:
-        merge_step += 1
-        
-        # adding debug print
-        if len(vocab)%int(vocab_size/10) == 0:
-            print(f"--- {datetime.datetime.now()} - {int(len(vocab)/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
-
-        ###########new way of doing it############
-        # index all pair counts
-
-        # sort according to pair counts
-        
-        # find vocab_size-vocab number of pairs to merge
-        
-        # merge and return
-
-        ###########old way of doing it############
-        # # 1) Find the most common pair with debug print
-        # most_common_pair = _find_most_common_pair(tokens_counts, merge_step, debug)
-        # if most_common_pair is None:
-        #     break  # No more pairs to merge
-        
-        # # 2) Form new token and update vocab
-        # new_token, token_id = _update_vocab_with_merge(most_common_pair, vocab, token_id, merges)
-        
-        # # 3) Update / merge the tokens_counts data structure
-        # tokens_counts = _update_tokens_counts(tokens_counts, most_common_pair, new_token)
 
     return vocab, merges
 
