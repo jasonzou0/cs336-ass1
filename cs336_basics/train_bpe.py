@@ -299,9 +299,9 @@ def _update_tokens_counts(
     tokens_counts: dict[tuple, int],
     most_common_pair: tuple[bytes, bytes],
     new_token: bytes,
-    saved_cache: dict[bytes, dict[tuple,int]] = dict(),
+    saved_cache: dict[bytes, set[tuple]] = dict(),
     # heapqueue: list
-) -> tuple[dict[tuple, int], dict[bytes, dict[tuple,int]]]:
+) -> tuple[dict[tuple, int], dict[bytes, set[tuple]]]:
     """
     Update token counts by merging occurrences of the most common pair.
     
@@ -319,39 +319,10 @@ def _update_tokens_counts(
 
     # if the new token can be found in the saved_cache, use it to initialize the count
     if new_token in saved_cache:
-        # print(f"Using saved cache for new token {new_token}: {saved_cache[new_token]}")
-        for next_byte, count in saved_cache[new_token].items():
-            new_pair=(new_token,next_byte)
-            if new_pair in tokens_counts:
-                tokens_counts[new_pair] = count
-            else:
-                tokens_counts[new_pair] += count
-
-        del saved_cache[new_token]  # remove the cache entry after use
-        # if (s,e) was merged, not only need to remove saved_cache[s], 
-        # but also need to remove items from any saved_cache key that ends with s and have 'e' as a member...
-        first, second = most_common_pair
-        del_list=[]
-        for s1_key,s1_item in list(saved_cache.items()):
-            if s1_key[-len(first):]==first:  #found a key that ends with the first byte of the new token
-                # print(f"Removing items from saved_cache for key {s1_key} that ends with {first}")
-                # Remove all items that have the second byte of the new token
-                # if s1_key[:-(len(new_token)-1)] == new_token[:-2]:  # if the key ends with the first byte of the new token
-                for s2_key,s2_cnt in s1_item.items():
-                    if s2_key[:len(second)] == second:
-                        del_list.append((s1_key,s2_key))  # mark for deletion
-        for s1_key,s2_key in del_list:
-            del saved_cache[s1_key][s2_key]  # delete the item from the cache
-
-        if most_common_pair in tokens_counts:
-            del tokens_counts[most_common_pair]  # remove the old pair from counts
-        # tokens_counts.pop(most_common_pair, None)  # remove the old pair from counts
-
-        # Update tokens_counts with the new token
-        new_tokens_counts=tokens_counts
-
-        update_list=[]
-        for bytes_tuple, count in list(tokens_counts.items()):
+        # find items in the saved_cache and update
+        print(f"Using saved cache for new token {new_token}: {saved_cache[new_token]}")
+        for bytes_tuple in saved_cache[new_token]:
+            print(f"Updating item {bytes_tuple} for {new_token} ")
             bytes_tuple_count = len(bytes_tuple) # Number of bytes in the tuple
             if bytes_tuple_count == 1:
                 continue # Skip single-byte tokens
@@ -359,6 +330,8 @@ def _update_tokens_counts(
             i = 0
             merge_happened = False
             while i < bytes_tuple_count:
+                # Check if the current pair matches the most common pair
+                # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
                 if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
                     new_bytes_tuple.append(new_token)
                     merge_happened = True
@@ -367,9 +340,18 @@ def _update_tokens_counts(
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
             if merge_happened:
-                update_list.append((bytes_tuple,tuple(new_bytes_tuple), count))
                 # print(f"Merge happened: {bytes_tuple} -> {new_bytes_tuple}, count={count}")
+                tokens_counts[tuple(new_bytes_tuple)] = tokens_counts[bytes_tuple]
+                del tokens_counts[bytes_tuple] 
+                # heapq.heappush(heapqueue, (-count, (new_token, bytes_tuple[1]))) # push new pairs to heap
+            else:
+                # If no merge happened, keep the original tuple
+                print(f"Warning, this shouldn't happen, bytes_tuple={bytes_tuple}, new_token={new_token}")
+                tokens_counts[bytes_tuple] = tokens_counts[bytes_tuple]
+        # do we need the following line?
+        del saved_cache[new_token]  # remove the cache entry after use
     else:
+        # iterate through all tokens and update 
         for bytes_tuple, count in list(tokens_counts.items()):
             bytes_tuple_count = len(bytes_tuple) # Number of bytes in the tuple
             if bytes_tuple_count == 1:
@@ -381,18 +363,14 @@ def _update_tokens_counts(
                 # Cache the counts of 3-grams for future use
                 if bytes_tuple_count-i>=3:
                     key1=bytes_tuple[i]+bytes_tuple[i + 1] # merge pair
-                    key2=bytes_tuple[i+2] # following bytes
                     # print(f"key1={key1}, key2={key2}, count={count}")
                     if key1 in saved_cache: # key1 already exists in cache
-                        key1_dict=saved_cache[key1]
-                        if key2 in key1_dict:
-                            # If the key already exists, increment the count    
-                            key1_dict[key2] += count
-                        else:
-                            key1_dict[key2] = count
+                        # append the new bytes_tuple into saved_cache[key1]
+                        saved_cache[key1].add(bytes_tuple)
                     else:
-                        saved_cache[key1] = {key2:count}
-                    # print(f"saved_cache[{key1}]={saved_cache[key1]}")
+                        # create new entry
+                        saved_cache[key1] = set(bytes_tuple)
+                    print(f"saved_cache[{key1}]={saved_cache[key1]}")
 
                 # Check if the current pair matches the most common pair
                 # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
@@ -405,7 +383,7 @@ def _update_tokens_counts(
                     i += 1
             if merge_happened:
                 # print(f"Merge happened: {bytes_tuple} -> {new_bytes_tuple}, count={count}")
-                new_tokens_counts[tuple(new_bytes_tuple)] += count
+                new_tokens_counts[tuple(new_bytes_tuple)] = count
                 # heapq.heappush(heapqueue, (-count, (new_token, bytes_tuple[1]))) # push new pairs to heap
             else:
                 # If no merge happened, keep the original tuple
