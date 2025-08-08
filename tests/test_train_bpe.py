@@ -54,6 +54,7 @@ def test_train_bpe_sennrich_example():
     expected_token_strings = ['st', 'est', 'ow', 'low', 'west', 'ne']
 
     # Verify there are exactly 6 merges
+    print(merges)
     assert len(merges) == 6
 
     # Verify the specific merges are as expected

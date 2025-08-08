@@ -200,13 +200,15 @@ def main():
         save_bpe(vocab, merges, args.output_dir)
         print("BPE tokenizer saved successfully!")
 
+    if args.profile:
+        # Run with profiling
+        run_with_profiling(run_training, args.output_dir)
+    else:
+        # Run without profiling
+        run_training()
+
     try:
-        if args.profile:
-            # Run with profiling
-            run_with_profiling(run_training, args.output_dir)
-        else:
-            # Run without profiling
-            run_training()
+        pass
 
     except Exception as e:
         print(f"Error during training: {e}", file=sys.stderr)
