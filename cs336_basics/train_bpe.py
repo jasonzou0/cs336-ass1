@@ -346,7 +346,7 @@ def _update_tokens_counts(
                 # heapq.heappush(heapqueue, (-count, (new_token, bytes_tuple[1]))) # push new pairs to heap
             else:
                 # If no merge happened, keep the original tuple
-                print(f"Warning, this shouldn't happen, bytes_tuple={bytes_tuple}, new_token={new_token}")
+                print(f"Warning: using saved_cache but no merge, this shouldn't happen, bytes_tuple={bytes_tuple}, new_token={new_token}")
                 tokens_counts[bytes_tuple] = tokens_counts[bytes_tuple]
         # do we need the following line?
         del saved_cache[new_token]  # remove the cache entry after use
@@ -393,7 +393,7 @@ def _update_tokens_counts(
                         saved_cache[key1] = set(new_bytes_tuple)
                     print(f"saved_cache[{key1}]={saved_cache[key1]}")
                     if  len(new_bytes_tuple)==1:
-                        print(f"Warning111, this shouldn't happen, new_bytes_tuple={new_bytes_tuple}, new_token={new_token}")
+                        print(f"Warning, this shouldn't happen, new_bytes_tuple={new_bytes_tuple}, new_token={new_token}")
 
 
     return new_tokens_counts,saved_cache
