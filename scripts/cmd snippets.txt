@@ -14,4 +14,4 @@ uv run pytest tests/test_train_bpe.py::test_train_bpe_speed
 uv run pytest tests/test_train_bpe.py::test_train_bpe_special_tokens
 uv run pytest tests/test_train_bpe.py::test_train_bpe_sennrich_example
 uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-size 300 --output-dir output/tonytest_small --profile --debug
-uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-size 1000 --output-dir output/tonytest_small --profile --debug
+uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-size 1000 --output-dir output/tonytest_small_1k --profile --debug

@@ -350,6 +350,7 @@ def _update_tokens_counts(
                 tokens_counts[bytes_tuple] = tokens_counts[bytes_tuple]
         # do we need the following line?
         del saved_cache[new_token]  # remove the cache entry after use
+        new_tokens_counts = tokens_counts
     else:
         # iterate through all tokens and update 
         for bytes_tuple, count in list(tokens_counts.items()):
@@ -360,18 +361,6 @@ def _update_tokens_counts(
             i = 0
             merge_happened = False
             while i < bytes_tuple_count:
-                # Cache the counts of 3-grams for future use
-                if bytes_tuple_count-i>=3:
-                    key1=bytes_tuple[i]+bytes_tuple[i + 1] # merge pair
-                    # print(f"key1={key1}, key2={key2}, count={count}")
-                    if key1 in saved_cache: # key1 already exists in cache
-                        # append the new bytes_tuple into saved_cache[key1]
-                        saved_cache[key1].add(bytes_tuple)
-                    else:
-                        # create new entry
-                        saved_cache[key1] = set(bytes_tuple)
-                    print(f"saved_cache[{key1}]={saved_cache[key1]}")
-
                 # Check if the current pair matches the most common pair
                 # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
                 if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
@@ -381,6 +370,7 @@ def _update_tokens_counts(
                 else:
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
+
             if merge_happened:
                 # print(f"Merge happened: {bytes_tuple} -> {new_bytes_tuple}, count={count}")
                 new_tokens_counts[tuple(new_bytes_tuple)] = count
@@ -388,6 +378,23 @@ def _update_tokens_counts(
             else:
                 # If no merge happened, keep the original tuple
                 new_tokens_counts[bytes_tuple] = count
+
+            # Cache the counts of 3-grams for future use
+            new_bytes_tuple_count = len(new_bytes_tuple)
+            while i < new_bytes_tuple_count:
+                if new_bytes_tuple_count-i>=3:
+                    key1=new_bytes_tuple[i]+new_bytes_tuple[i + 1] # merge pair
+                    # print(f"key1={key1}, key2={key2}, count={count}")
+                    if key1 in saved_cache: # key1 already exists in cache
+                        # append the new bytes_tuple into saved_cache[key1]
+                        saved_cache[key1].add(new_bytes_tuple)
+                    else:
+                        # create new entry
+                        saved_cache[key1] = set(new_bytes_tuple)
+                    print(f"saved_cache[{key1}]={saved_cache[key1]}")
+                    if  len(new_bytes_tuple)==1:
+                        print(f"Warning111, this shouldn't happen, new_bytes_tuple={new_bytes_tuple}, new_token={new_token}")
+
 
     return new_tokens_counts,saved_cache
 
@@ -449,8 +456,10 @@ def perform_bpe_merges(
         merge_step += 1
         
         # adding debug print
-        if len(vocab) % int(vocab_size/100) == 0 or merge_step % 100==0:
+        if len(vocab) % int(vocab_size/10) == 0 or merge_step % 100==0:
             print(f"--- {datetime.datetime.now()} - {int(len(vocab)/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
+        # if len(vocab) % int(vocab_size/100) == 0 or merge_step % 100==0:
+            # print(f"--- {datetime.datetime.now()} - {int(len(vocab)/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
 
         # 1) Find the most common pair with debug print
         heapqueue=build_bytepair_heap(tokens_counts)
@@ -496,8 +505,8 @@ def perform_bpe_merges_new(
         merge_step += 1
         
         # adding debug print
-        if merge_step % int(vocab_size/100) == 0:
-            print(f"--- {datetime.datetime.now()} - {int(merge_step/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
+        if len(vocab)%int(vocab_size/10) == 0:
+            print(f"--- {datetime.datetime.now()} - {int(len(vocab)/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
 
         ###########new way of doing it############
         # index all pair counts
