@@ -396,24 +396,23 @@ def _update_tokens_counts(
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
 
-                #TODO: only create cache once or if doesn't exists
-                #TODO: update cache with pairs containing newly created token
+                #DONE: only create cache once or if doesn't exists
+                #DONE: update cache with pairs containing newly created token
                 # if bytes_tuple_count-j>1 and not flag_step_merged:
                 if flag_saved_cache_uninitialized and \
                 not flag_step_merged \
-                and bytes_tuple_count-j>1:# create pair list to save to cache if cache doesn't exists
+                and bytes_tuple_count-j>1:# create pair list to save to cache if cache doesn't exists and no merge happened at this step
                     #merge didn't happen
                     key1=(bytes_tuple[j],bytes_tuple[j + 1]) # non-merged pair
                     list_cache_pair.append(key1)
                 elif bytes_tuple_count-j>2 and flag_step_merged: # update cache if cache already exists and there are pairs merged
                     #merge happened
+                    if (j-1)>=0:
+                        _=list_cache_pair.pop()  # delete last item from update list
+                        key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
+                        list_cache_pair.append(key2) # push in the new pair to update
                     key1=(bytes_tuple[j]+bytes_tuple[j + 1],bytes_tuple[j+2]) # (merged new_token , next byte) pair
                     list_cache_pair.append(key1)
-                    if (j-1)>=0:
-                        key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
-                        list_cache_pair.append(key2)
-                    
-
             if merge_happened:
                 # print(f"Merge happened: {bytes_tuple} -> {new_bytes_tuple}, count={count}")
                 new_tokens_counts[tuple(new_bytes_tuple)] = count
@@ -424,6 +423,7 @@ def _update_tokens_counts(
 
             # print(f"key1={key1}, key2={key2}, count={count}")
             # print(f'Cache list={list_cache_pair}')
+            # Update saved_cache
             for key1 in list_cache_pair:
                 # print(f"processing key1={key1}, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
                 if key1 in saved_cache: # key1 already exists in cache
