@@ -372,13 +372,38 @@ def _update_tokens_counts(
             while i < bytes_tuple_count:
                 # Check if the current pair matches the most common pair
                 # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
+                flag_step_merged=False
                 if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
                     new_bytes_tuple.append(new_token)
                     merge_happened = True
-                    i += 2
+                    flag_step_merged=True
                 else:
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
+
+                #save to cache
+                if flag_step_merged:
+                    #merge happened
+                    key1=(bytes_tuple[i]+bytes_tuple[i + 1],bytes_tuple[i+2]) # merge pair
+                    i += 2
+                else:
+                    #merge didn't happen
+                    key1=(bytes_tuple[i],new_bytes_tuple[i + 1]) # merge pair
+                    i += 1
+                    
+                # print(f"key1={key1}, key2={key2}, count={count}")
+                if key1 in saved_cache: # key1 already exists in cache
+                    # append the new bytes_tuple into saved_cache[key1]
+                    saved_cache[key1].add(tuple(new_bytes_tuple))
+                else:
+                    # create new entry
+                    new_entry: set[tuple] = set()
+                    new_entry.add(tuple(new_bytes_tuple))
+                    saved_cache[key1] = new_entry
+                # print(f"saved_cache[{key1}]={saved_cache[key1]}")
+                if  len(new_bytes_tuple)==1:
+                    print(f"Warning: 1 len insert, this shouldn't happen, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
+
 
             if merge_happened:
                 # print(f"Merge happened: {bytes_tuple} -> {new_bytes_tuple}, count={count}")
@@ -387,29 +412,6 @@ def _update_tokens_counts(
             else:
                 # If no merge happened, keep the original tuple
                 new_tokens_counts[bytes_tuple] = count
-
-            # Cache the counts of 3-grams for future use
-            new_bytes_tuple_count = len(new_bytes_tuple)
-            # print(f"info: type(new_bytes_tuple)={type(new_bytes_tuple)}, new_bytes_tuple={new_bytes_tuple}, len(new_bytes_tuple)={len(new_bytes_tuple)},count={count}")
-            j=0
-            while j < new_bytes_tuple_count:
-                if new_bytes_tuple_count-j>=2:
-                    # key1=(new_bytes_tuple[j],new_bytes_tuple[j + 1]) # merge pair
-                    key1=new_bytes_tuple[j]+new_bytes_tuple[j + 1] # merge pair
-                    # print(f"key1={key1}, key2={key2}, count={count}")
-                    if key1 in saved_cache: # key1 already exists in cache
-                        # append the new bytes_tuple into saved_cache[key1]
-                        saved_cache[key1].add(tuple(new_bytes_tuple))
-                    else:
-                        # create new entry
-                        new_entry: set[tuple] = set()
-                        new_entry.add(tuple(new_bytes_tuple))
-                        saved_cache[key1] = new_entry
-                    # print(f"saved_cache[{key1}]={saved_cache[key1]}")
-                    if  len(new_bytes_tuple)==1:
-                        print(f"Warning: 1 len insert, this shouldn't happen, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
-                j=j+1
-
     return new_tokens_counts,saved_cache
 
 def _update_tokens_counts_worker(args):
