@@ -368,6 +368,11 @@ def _update_tokens_counts(
         new_tokens_counts = tokens_counts
     else:
         # iterate through all tokens and update 
+        if len(saved_cache)==0: 
+            flag_saved_cache_uninitialized=True
+        else:
+            flag_saved_cache_uninitialized=False
+
         for bytes_tuple, count in list(tokens_counts.items()):
             # print(f"info: type(bytes_tuple)={type(bytes_tuple)}, bytes_tuple={bytes_tuple}, len(bytes_tuple)={len(bytes_tuple)},count={count}")
             bytes_tuple_count = len(bytes_tuple) # Number of bytes in the tuple
@@ -391,15 +396,23 @@ def _update_tokens_counts(
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
 
-                # create pair list to save to cache
-                if bytes_tuple_count-j>2 and flag_step_merged:
-                    #merge happened
-                    key1=(bytes_tuple[j]+bytes_tuple[j + 1],bytes_tuple[j+2]) # (merged new_token , next byte) pair
-                    list_cache_pair.append(key1)
-                elif bytes_tuple_count-j>1 and not flag_step_merged:
+                #TODO: only create cache once or if doesn't exists
+                #TODO: update cache with pairs containing newly created token
+                # if bytes_tuple_count-j>1 and not flag_step_merged:
+                if flag_saved_cache_uninitialized and \
+                not flag_step_merged \
+                and bytes_tuple_count-j>1:# create pair list to save to cache if cache doesn't exists
                     #merge didn't happen
                     key1=(bytes_tuple[j],bytes_tuple[j + 1]) # non-merged pair
                     list_cache_pair.append(key1)
+                elif bytes_tuple_count-j>2 and flag_step_merged: # update cache if cache already exists and there are pairs merged
+                    #merge happened
+                    key1=(bytes_tuple[j]+bytes_tuple[j + 1],bytes_tuple[j+2]) # (merged new_token , next byte) pair
+                    list_cache_pair.append(key1)
+                    if (j-1)>=0:
+                        key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
+                        list_cache_pair.append(key2)
+                    
 
             if merge_happened:
                 # print(f"Merge happened: {bytes_tuple} -> {new_bytes_tuple}, count={count}")
