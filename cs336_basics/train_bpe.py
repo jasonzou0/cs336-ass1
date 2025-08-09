@@ -354,6 +354,8 @@ def _update_tokens_counts(
                 # heapq.heappush(heapqueue, (-count, (new_token, bytes_tuple[1]))) # push new pairs to heap
             else:
                 # If no merge happened, keep the original tuple
+                # Wrong, this could actually happen, for example ('c','t') is being merged and bytes_tuple is ('c','ti','e',....)
+                # This happens because ('c','t','i','e',....) got a ('t','i') merge already
                 print(f"Warning: using saved_cache but no merge, this shouldn't happen, "+
                       f"bytes_tuple={bytes_tuple}, len(bytes_tuple)={len(bytes_tuple)} ,"+
                       f"type(bytes_tuple)={type(bytes_tuple)}"+
