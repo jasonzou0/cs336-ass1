@@ -394,11 +394,11 @@ def _update_tokens_counts(
                 # create pair list to save to cache
                 if bytes_tuple_count-j>2 and flag_step_merged:
                     #merge happened
-                    key1=(bytes_tuple[j]+bytes_tuple[j + 1],bytes_tuple[j+2]) # merge pair
+                    key1=(bytes_tuple[j]+bytes_tuple[j + 1],bytes_tuple[j+2]) # (merged new_token , next byte) pair
                     list_cache_pair.append(key1)
                 elif bytes_tuple_count-j>1 and not flag_step_merged:
                     #merge didn't happen
-                    key1=(bytes_tuple[j],bytes_tuple[j + 1]) # merge pair
+                    key1=(bytes_tuple[j],bytes_tuple[j + 1]) # non-merged pair
                     list_cache_pair.append(key1)
 
             if merge_happened:
