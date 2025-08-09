@@ -385,12 +385,12 @@ def _update_tokens_counts(
             while i < bytes_tuple_count:
                 # Check if the current pair matches the most common pair
                 # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
-                flag_step_merged=False
+                flag_merge_step=False
                 j=i
                 if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
                     new_bytes_tuple.append(new_token)
                     merge_happened = True
-                    flag_step_merged=True
+                    flag_merge_step=True
                     i += 2
                 else:
                     new_bytes_tuple.append(bytes_tuple[i])
@@ -400,17 +400,18 @@ def _update_tokens_counts(
                 #DONE: update cache with pairs containing newly created token
                 # if bytes_tuple_count-j>1 and not flag_step_merged:
                 if flag_saved_cache_uninitialized and \
-                not flag_step_merged \
+                not flag_merge_step \
                 and bytes_tuple_count-j>1:# create pair list to save to cache if cache doesn't exists and no merge happened at this step
                     #merge didn't happen
                     key1=(bytes_tuple[j],bytes_tuple[j + 1]) # non-merged pair
                     list_cache_pair.append(key1)
-                elif bytes_tuple_count-j>2 and flag_step_merged: # update cache if cache already exists and there are pairs merged
+                elif bytes_tuple_count-j>2 and flag_merge_step: # update cache if cache already exists and there are pairs merged
                     #merge happened
                     if (j-1)>=0:
                         if len(list_cache_pair)>0:
                             _=list_cache_pair.pop()  # delete last item from update list
                         # key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
+                        # use new_bytes_tuple[-1 instead of bytes_tuple[j-1] in case we also did a merge 1 step ago
                         key2=(new_bytes_tuple[-1],new_token) # (previous byte, merged new_token ) pair
                         list_cache_pair.append(key2) # push in the new pair to update
                     key1=(new_token,bytes_tuple[j+2]) # (merged new_token , next byte) pair
