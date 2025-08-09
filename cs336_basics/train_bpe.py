@@ -318,12 +318,14 @@ def _update_tokens_counts(
     new_tokens_counts = defaultdict(int)
 
     # if the new token can be found in the saved_cache, use it to initialize the count
+    # if most_common_pair in saved_cache:
     if new_token in saved_cache:
         # find items in the saved_cache and update
-        print(f"Using saved cache for new token {new_token}: {saved_cache[new_token]}")
+        # print(f"Using saved cache for new token {new_token}: {saved_cache[new_token]}")
+        print(f"Using saved cache for new token {new_token}")
+        # for bytes_tuple in saved_cache[most_common_pair]:
         for bytes_tuple in saved_cache[new_token]:
             # print(f"Updating item {bytes_tuple} for {new_token} ")
-            bytes_tuple = tuple(bytes_tuple)  # Ensure it's a tuple
             bytes_tuple_count = len(bytes_tuple) # Number of bytes in the tuple
             if bytes_tuple_count == 1:
                 continue # Skip single-byte tokens
@@ -333,7 +335,8 @@ def _update_tokens_counts(
             while i < bytes_tuple_count:
                 # Check if the current pair matches the most common pair
                 # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
-                if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
+                # if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
+                if i < bytes_tuple_count - 1 and bytes_tuple[i]+bytes_tuple[i + 1] == new_token:
                     new_bytes_tuple.append(new_token)
                     merge_happened = True
                     i += 2
@@ -348,10 +351,12 @@ def _update_tokens_counts(
             else:
                 # If no merge happened, keep the original tuple
                 print(f"Warning: using saved_cache but no merge, this shouldn't happen, "+
-                      f"bytes_tuple={bytes_tuple}, new_token={new_token}, len(bytes_tuple)={len(bytes_tuple)} ,"+
-                      f"type(bytes_tuple)={type(bytes_tuple)}")
+                      f"bytes_tuple={bytes_tuple}, len(bytes_tuple)={len(bytes_tuple)} ,"+
+                      f"type(bytes_tuple)={type(bytes_tuple)}"+
+                      f", new_token={new_token}, most_common_pair={most_common_pair}")
                 tokens_counts[bytes_tuple] = tokens_counts[bytes_tuple]
         # do we need the following line?
+        # del saved_cache[most_common_pair]  # remove the cache entry after use
         del saved_cache[new_token]  # remove the cache entry after use
         new_tokens_counts = tokens_counts
     else:
@@ -389,6 +394,7 @@ def _update_tokens_counts(
             j=0
             while j < new_bytes_tuple_count:
                 if new_bytes_tuple_count-j>=2:
+                    # key1=(new_bytes_tuple[j],new_bytes_tuple[j + 1]) # merge pair
                     key1=new_bytes_tuple[j]+new_bytes_tuple[j + 1] # merge pair
                     # print(f"key1={key1}, key2={key2}, count={count}")
                     if key1 in saved_cache: # key1 already exists in cache
@@ -401,9 +407,8 @@ def _update_tokens_counts(
                         saved_cache[key1] = new_entry
                     # print(f"saved_cache[{key1}]={saved_cache[key1]}")
                     if  len(new_bytes_tuple)==1:
-                        print(f"Warning, this shouldn't happen, new_bytes_tuple={new_bytes_tuple}, new_token={new_token}")
+                        print(f"Warning: 1 len insert, this shouldn't happen, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
                 j=j+1
-
 
     return new_tokens_counts,saved_cache
 
