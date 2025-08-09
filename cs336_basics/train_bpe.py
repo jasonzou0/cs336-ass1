@@ -325,7 +325,7 @@ def _update_tokens_counts(
         # print(f"Using saved cache for new token {new_token}: {saved_cache[new_token]}")
         # print(f"Using saved cache for new token {new_token}")
         # print(f"Using saved cache for pair {most_common_pair}: {saved_cache[most_common_pair]}")
-        print(f"Using saved cache for pair {key0}")
+        # print(f"Using saved cache for pair {key0}")
         # for bytes_tuple in saved_cache[most_common_pair]:
         # for bytes_tuple in saved_cache[new_token]:
         for bytes_tuple in saved_cache[key0]:
@@ -419,9 +419,9 @@ def _update_tokens_counts(
                     new_entry: set[tuple] = set()
                     new_entry.add(tuple(new_bytes_tuple))
                     saved_cache[key1] = new_entry
-                print(f"saved_cache[{key1}]={saved_cache[key1]}")
-                if  len(new_bytes_tuple)==1:
-                    print(f"Warning: 1 len insert, this shouldn't happen, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
+                # print(f"saved_cache[{key1}] added {new_bytes_tuple}")
+                # if  len(new_bytes_tuple)==1:
+                #     print(f"Warning: 1 len insert, this shouldn't happen, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
 
     return new_tokens_counts,saved_cache
 
