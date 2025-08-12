@@ -133,6 +133,12 @@ def main():
     )
 
     parser.add_argument(
+        "--save-tokens-counts", 
+        action="store_true",
+        help="Save the pre-tokenized dictionary tokens-counts to a pickle file in output directory"
+    )
+
+    parser.add_argument(
         "--load-tokens-counts", 
         action="store_true",
         help="Try to load the pre-tokenized dictionary from pickle file"
