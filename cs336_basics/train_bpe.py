@@ -355,17 +355,19 @@ def _update_tokens_counts(
                 # create list of key to update cache
                 # TODO: if (b' t',b'he') is the most common pair, and (b' t',b'he') is also the current bytes_tuple, what should we do?
                 #       it seems we don't need to add anything else to cache? because b' the' has nothing to form a pair anymore in current bytes_tuple?
-                if bytes_tuple_count-j>2 and flag_merge_step: # update cache if cache already exists and there are pairs merged
-                    #merge happened
-                    if (j-1)>=0:
-                        if len(list_cache_pair)>0:
-                            _=list_cache_pair.pop()  # delete last item from update list
+                if flag_merge_step:
+                    # merge happened
+                    # update cache if cache already exists and there are pairs merged
+                    if bytes_tuple_count-j>2: # if there is a next byte after the merged token, cache it as new pair
+                        key1=(new_token,bytes_tuple[j+2]) # (merged new_token , next byte) pair
+                        list_cache_pair.append(key1)
+                    if (j-1)>=0: # if there is a previous byte before the merged token, cache it as new pair
+                        # if len(list_cache_pair)>0:
+                        #     _=list_cache_pair.pop()  # delete last item from update list
                         # key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
                         # use new_bytes_tuple[-1 instead of bytes_tuple[j-1] in case we also did a merge 1 step ago
                         key2=(new_bytes_tuple[-2],new_token) # (previous byte, merged new_token ) pair
                         list_cache_pair.append(key2) # push in the new pair to update
-                    key1=(new_token,bytes_tuple[j+2]) # (merged new_token , next byte) pair
-                    list_cache_pair.append(key1)
             # TODO: if (b' t',b'he') is the most common pair, and (b' t',b'he') is also the current bytes_tuple, what should we do?
             #       it seems (b' t',b'he') is both common pair and current bytes_tuple, it didn't del it from tokens_counts?
             if merge_happened:
