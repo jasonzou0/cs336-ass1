@@ -8,6 +8,7 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from einops import einsum
 
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
@@ -33,7 +34,8 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    # TODO: rewrite using Pytorch module and implements weights initialization + loading
+    return einsum(in_features, weights, "... d_in, d_out d_in -> ... d_out")
 
 
 def run_embedding(
