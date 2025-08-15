@@ -326,8 +326,7 @@ def _update_tokens_counts(
     new_tokens_counts = defaultdict(int)
 
     # if the new token can be found in the saved_cache, use it to initialize the count
-    key0=most_common_pair
-    if key0 in saved_cache:
+    if most_common_pair in saved_cache:
     # if new_token in saved_cache:
         # find items in the saved_cache and update
         # print(f"Using saved cache for new token {new_token}: {saved_cache[new_token]}")
@@ -336,7 +335,7 @@ def _update_tokens_counts(
         # print(f"Using saved cache for pair {key0}")
         # for bytes_tuple in saved_cache[most_common_pair]:
         # for bytes_tuple in saved_cache[new_token]:
-        for bytes_tuple in saved_cache[key0]:
+        for bytes_tuple in saved_cache[most_common_pair]:
             # print(f"Updating item {bytes_tuple} for {key0} ")
             bytes_tuple_count = len(bytes_tuple) # Number of bytes in the tuple
             if bytes_tuple_count == 1:
@@ -350,7 +349,7 @@ def _update_tokens_counts(
                 # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
                 flag_merge_step=False
                 j=i
-                if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == key0:
+                if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
                 # if i < bytes_tuple_count - 1 and bytes_tuple[i]+bytes_tuple[i + 1] == key0:
                     new_bytes_tuple.append(new_token)
                     merge_happened = True
@@ -395,19 +394,19 @@ def _update_tokens_counts(
                 tokens_counts[bytes_tuple] = tokens_counts[bytes_tuple]
             
             # update saved_cache
-            for key1 in list_cache_pair:
+            for cache_pair in list_cache_pair:
                 # print(f"processing key1={key1}, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
-                if key1 in saved_cache: # key1 already exists in cache
+                if cache_pair in saved_cache: # key1 already exists in cache
                     # append the new bytes_tuple into saved_cache[key1]
-                    saved_cache[key1].add(tuple(new_bytes_tuple))
+                    saved_cache[cache_pair].add(tuple(new_bytes_tuple))
                 else:
                     # create new entry
                     new_entry: set[tuple] = set()
                     new_entry.add(tuple(new_bytes_tuple))
-                    saved_cache[key1] = new_entry
+                    saved_cache[cache_pair] = new_entry
 
         # do we need the following line?
-        del saved_cache[key0]  # remove the cache entry after use
+        del saved_cache[most_common_pair]  # remove the cache entry after use
         # del saved_cache[most_common_pair]  # remove the cache entry after use
         # del saved_cache[new_token]  # remove the cache entry after use
         new_tokens_counts = tokens_counts
