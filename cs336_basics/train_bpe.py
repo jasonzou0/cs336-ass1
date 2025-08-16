@@ -447,6 +447,8 @@ def _update_tokens_counts(
                 else:
                     # raise Exception(f"Error: pair {pair} not found in saved_cache, this shouldn't happen")
                     print(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
+            else:
+                saved_cache[pair_upd].add(tuple(new_bytes_tuple))
 
         for pair_add,bytes_tuple,new_bytes_tuple in full_set_pair_cache_add:
             # print(f"processing key1={key1}, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
@@ -506,18 +508,21 @@ def _update_tokens_counts(
                 and bytes_tuple_count-j>1:# create pair list to save to cache if cache doesn't exists and no merge happened at this step
                     #merge didn't happen
                     set_pair_cache_add.add(tuple([bytes_tuple[j],bytes_tuple[j + 1]])) #non merged pair
-                if bytes_tuple_count-j>=2 and flag_merge_step: # update cache if there are pairs merged
+                if (j+1)<=(bytes_tuple_count-1) and flag_merge_step: # update cache if there are pairs merged
                     #merge happened
-                    # TODO: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...)
-                    # if (j+3<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) != most_common_pair)) or \
-                    # (j+3>=bytes_tuple_count): # in case of scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) 
-                    if (j-1)>=0:
+                    # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) and i is pointing to the second b'i'
+                    # if (j-1)>=0: #there is at least one byte before the merged token
+                    if ((j-2)>=0 and ((bytes_tuple[j-2],bytes_tuple[j-1]) != most_common_pair)) or \
+                    (j==1): 
                         # if len(set_pair_cache_add)>0:
                         #     _=set_pair_cache_add.pop()  # delete last item from update list
                         # key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
                         # use new_bytes_tuple[-1 instead of bytes_tuple[j-1] in case we also did a merge 1 step ago
                         set_pair_cache_add.add(tuple([new_bytes_tuple[-2],new_token])) # push in the new pair(prev_token,new_token) to cache
-                    if (j+2)<bytes_tuple_count: # if there is a next byte after the merged token
+                    # TODO: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...)
+                    # if (j+2)<bytes_tuple_count: # if there is a next byte after the merged token
+                    if ((j+3)<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) != most_common_pair)) or \
+                    (j+2)==(bytes_tuple_count-1): # in case of scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) 
                         key1=(new_token,bytes_tuple[j+2]) # (merged new_token , next byte) pair
                         set_pair_cache_add.add(key1)
 
@@ -604,9 +609,9 @@ def perform_bpe_merges(
             # print(f"--- {datetime.datetime.now()} - {int(len(vocab)/vocab_size*100)}%, Merge step {merge_step}, current vocab size: {len(vocab)} ---")
 
         # 1) Find the most common pair with debug print
-        # heapqueue=build_bytepair_heap(tokens_counts)
-        # most_common_pair = _find_most_common_pair_heap(heapqueue, merge_step, debug)
-        most_common_pair = _find_most_common_pair(tokens_counts, merge_step, debug)
+        heapqueue=build_bytepair_heap(tokens_counts)
+        most_common_pair = _find_most_common_pair_heap(heapqueue, merge_step, debug)
+        # most_common_pair = _find_most_common_pair(tokens_counts, merge_step, debug)
         if most_common_pair is None:
             break  # No more pairs to merge
         
