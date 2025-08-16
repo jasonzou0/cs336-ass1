@@ -21,7 +21,10 @@ def test_train_bpe_speed():
         special_tokens=["<|endoftext|>"],
     )
     end_time = time.time()
-    assert end_time - start_time < 1.5
+    # put duration in a variable to make it easier to debug if needed
+    duration=end_time-start_time
+    assert duration < 1.5
+    # assert end_time - start_time < 1.5
 
 def test_train_bpe_sennrich_example():
     input_path = FIXTURES_PATH / "sennrich.en"

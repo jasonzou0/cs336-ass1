@@ -443,26 +443,34 @@ def _update_tokens_counts(
                 if bytes_tuple in saved_cache[pair_del]:
                     saved_cache[pair_del].remove(bytes_tuple)
                 else:
-                    pass
+                    # old bytes_tuple not found in saved_cache[pair_del], just ignore
                     # TODO: explain why this actually could happen? 
-                    # for example if we have a pair (b'c',b't') and we merged it in (b'c',b't','i','e') 
-                    # and then we try to delete it for (b't',b'i'), 
-                    # but (b'i',b'e') was already merged earlier, so now the byte_tuple is (b'c',b't',b'ie')....
-                    # hmm, still doesn't sound right, when updating(b'i',b'e'), it should delete it already for saved_cache[(b't',b'i')]
-                    # need to think again
+                    # This is normal: see scenario below:
+                    #
+                    # first merge the (b'h',b'e') 
+                    # old=(b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'h', b'e', b'r') 
+                    # new=(b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'he', b'r')
+                    # Add: {(b'p', b'he'), (b'he', b'r')}, 
+                    # Update: {(b'h', b'o'), (b'a', b'p'), (b'g', b'r'), (b'p', b'h'), (b'o', b't'), (b't', b'o'), (b'o', b'g'), (b'r', b'a'), (b' ', b'p')}, 
+                    # Delete: {(b'h', b'e'), (b'e', b'r')}
+                    #
+                    # next time we merge (b' ',b'p'), it will try to delete the new bytes_tuple in saved_cache(b'p',b'h') 
+                    # which is not in the saved_cache[(b'p',b'h')]
+
                     # raise Exception(f"Error: set_pair_cache_delete: this shouldn't happen:\n"+  
                     #                 f"{bytes_tuple} not found in saved_cache[{pair_del}],\n"+ \
                     #                 f"bytes_tuple={bytes_tuple},\n"+ \
                     #                 f"new_bytes_tuple={new_bytes_tuple},\n"+\
                     #                 f"most_common_pair={most_common_pair}")   
+                    pass
             else:
-                pass
                 # TODO: explain why this actually could happen? - SHOULDN'T
                 raise Exception(f"Error: set_pair_cache_delete: this shouldn't happen:\n"+  
                                 f"{pair_del} not found in saved_cache,\n"+ \
                                 f"bytes_tuple={bytes_tuple},\n"+ \
                                 f"new_bytes_tuple={new_bytes_tuple},\n"+\
                                 f"most_common_pair={most_common_pair}")   
+                pass
 
         for pair_upd,bytes_tuple,new_bytes_tuple in full_set_pair_cache_update:
             # following could actually happen, for example we have a pair (b'i',b'n',b'i',b'n',b'n',b'i',b'c',b'e')
@@ -479,13 +487,18 @@ def _update_tokens_counts(
                 saved_cache[pair_upd]=set()
                 saved_cache[pair_upd].add(new_bytes_tuple)
                 # TODO: explain why this actually could happen? Strange: even if it was deleted, the empty set() should still exists?
-                # raise Exception(f"Warning1: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
+                # ANSWER: SHOUDN'T
+                raise Exception(f"Warning: set_pair_update: this shouldn't happen:"+\
+                                f"{pair_upd} not found in saved_cache,\n"+ \
+                                f"bytes_tuple={bytes_tuple},\n"+ \
+                                f"new_bytes_tuple={new_bytes_tuple},\n"+\
+                                f"most_common_pair={most_common_pair}")   
                 # print(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
 
         for pair_add,bytes_tuple,new_bytes_tuple in full_set_pair_cache_add:
             # print(f"processing key1={key1}, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
             if pair_add in saved_cache: # key1 already exists in cache
-                # append the new bytes_tuple into saved_cache[key1]
+                # this could happen because we might have same pair (x,new_token) added from different bytes_tuple previously
                 saved_cache[pair_add].add(new_bytes_tuple)
             else:
                 # create new entry
@@ -493,10 +506,9 @@ def _update_tokens_counts(
                 new_entry.add(new_bytes_tuple)
                 saved_cache[pair_add] = new_entry
 
+        assert len(saved_cache[most_common_pair])==0, f"Error: saved_cache[{most_common_pair}] should be empty after processing, but got {len(saved_cache[most_common_pair])} items left."
         # do we need the following line?
-        del saved_cache[most_common_pair]  # remove the cache entry after use
         # del saved_cache[most_common_pair]  # remove the cache entry after use
-        # del saved_cache[new_token]  # remove the cache entry after use
         new_tokens_counts = tokens_counts
     else:
         # do we have a cache? 

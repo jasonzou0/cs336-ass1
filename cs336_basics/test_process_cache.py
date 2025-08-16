@@ -1,9 +1,3 @@
-old=('a','b','c','d','e','f','a','b','x','c','d','b','c','m','b','c','b','c')
-new=('a','bc','d','e','f','a','b','x','c','d','bc','m','bc','bc')
-merges=[1,11,14,16]
-
-# output (add_set, upd_set, del_set)
-
 
 def get_pairs(byte_tuple: tuple[bytes]):
     pairs = set() 
@@ -45,7 +39,19 @@ def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes]):
 
     return add_set, update_set, delete_set
 
+old=('a','b','c','d','e','f','a','b','x','c','d','b','c','m','b','c','b','c')
+new=('a','bc','d','e','f','a','b','x','c','d','bc','m','bc','bc')
+
+
 print(get_pairs(old))
 print(get_pairs(new))
-a,u,d=process_cache_update(old, new)
+a,u,d=get_cache_updates(old, new)
+print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")
+print("--------------------------------------------------------")
+
+
+old= (b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'h', b'e', b'r')
+new= (b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'he', b'r') 
+a,u,d=get_cache_updates(old, new)
+print(f"old={old} \nnew={new}")
 print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")
