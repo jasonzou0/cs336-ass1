@@ -1,4 +1,3 @@
-
 def get_pairs(byte_tuple: tuple[bytes]):
     pairs = set() 
     i=0
@@ -8,7 +7,7 @@ def get_pairs(byte_tuple: tuple[bytes]):
         i=i+1
     return pairs
 
-def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes]):
+def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes], skip_update: bool = True):
     """
     Process the cache update based on the old and new byte tuples and the merges.
     Returns a tuple of sets: (add_set, update_set, delete_set).
@@ -27,31 +26,41 @@ def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes]):
             delete_set.add(pair)
 
     for pair in new_pairs:
-        # Determine added pairs (in new_pairs but not in old_pairs)
         if pair not in old_pairs:
+            # Determine added pairs (in new_pairs but not in old_pairs)
             add_set.add(pair)
-        # Determine updated pairs (in both new and old pairs and old not equal new)
-        if pair in old_pairs:
+        else:
+            # Determine updated pairs (in both new and old pairs and old not equal new)
             update_set.add(pair)
 
-    if new_pairs == old_pairs:
+    if new_pairs == old_pairs and skip_update:
         update_set = set()  # If no changes, clear update set
 
     return add_set, update_set, delete_set
 
-old=('a','b','c','d','e','f','a','b','x','c','d','b','c','m','b','c','b','c')
-new=('a','bc','d','e','f','a','b','x','c','d','bc','m','bc','bc')
+# old=(b'a',b'b',b'c',b'd',b'e',b'f',b'a',b'b',b'x',b'c',b'd',b'b',b'c',b'm',b'b',b'c',b'b',b'c')
+# new=(b'a',b'bc',b'd',b'e',b'f',b'a',b'b',b'x',b'c',b'd',b'bc',b'm',b'bc',b'bc')
+# print(get_pairs(old))
+# print(get_pairs(new))
+# a,u,d=get_cache_updates(old, new)
+# print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")
+# print("--------------------------------------------------------")
 
 
-print(get_pairs(old))
-print(get_pairs(new))
-a,u,d=get_cache_updates(old, new)
-print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")
-print("--------------------------------------------------------")
+# old= (b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'h', b'e', b'r')
+# new= (b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'he', b'r') 
+# print(f"old={old} \nnew={new}")
+# print(f"old_pairs={get_pairs(old)}")
+# print(f"new_pairs={get_pairs(new)}")
+# a,u,d=get_cache_updates(old, new)
+# print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")
+# print("--------------------------------------------------------")
 
 
-old= (b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'h', b'e', b'r')
-new= (b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'he', b'r') 
-a,u,d=get_cache_updates(old, new)
+old=(b'l', b'o', b'w')
+new=(b'l', b'o', b'w')
 print(f"old={old} \nnew={new}")
+print(f"old_pairs={get_pairs(old)}")
+print(f"new_pairs={get_pairs(new)}")
+a,u,d=get_cache_updates(old, new, False)
 print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")

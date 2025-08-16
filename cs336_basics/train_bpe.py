@@ -334,7 +334,7 @@ def _update_tokens_counts(
             i=i+1
         return pairs
 
-    def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes]):
+    def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes], skip_update: bool = True):
         """
         Process the cache update based on the old and new byte tuples and the merges.
         Returns a tuple of sets: (add_set, update_set, delete_set).
@@ -353,14 +353,14 @@ def _update_tokens_counts(
                 delete_set.add(pair)
 
         for pair in new_pairs:
-            # Determine added pairs (in new_pairs but not in old_pairs)
             if pair not in old_pairs:
+                # Determine added pairs (in new_pairs but not in old_pairs)
                 add_set.add(pair)
-            # Determine updated pairs (in both new and old pairs and old not equal new)
-            if pair in old_pairs:
+            else:
+                # Determine updated pairs (in both new and old pairs and old not equal new)
                 update_set.add(pair)
 
-        if new_pairs == old_pairs:
+        if new_pairs == old_pairs and skip_update:
             update_set = set()  # If no changes, clear update set
 
         return add_set, update_set, delete_set
@@ -450,8 +450,10 @@ def _update_tokens_counts(
                     # first merge the (b'h',b'e') 
                     # old=(b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'h', b'e', b'r') 
                     # new=(b' ', b'p', b'h', b'o', b't', b'o', b'g', b'r', b'a', b'p', b'he', b'r')
+                    # old_pairs={(b'o', b'g'), (b't', b'o'), (b'h', b'e'), (b'r', b'a'), (b'p', b'h'), (b'o', b't'), (b'g', b'r'), (b'e', b'r'), (b'h', b'o'), (b' ', b'p'), (b'a', b'p')}
+                    # new_pairs={(b'o', b'g'), (b't', b'o'), (b'r', b'a'), (b'p', b'h'), (b'he', b'r'), (b'o', b't'), (b'g', b'r'), (b'p', b'he'), (b'h', b'o'), (b' ', b'p'), (b'a', b'p')}
                     # Add: {(b'p', b'he'), (b'he', b'r')}, 
-                    # Update: {(b'h', b'o'), (b'a', b'p'), (b'g', b'r'), (b'p', b'h'), (b'o', b't'), (b't', b'o'), (b'o', b'g'), (b'r', b'a'), (b' ', b'p')}, 
+                    # Update: {(b'o', b'g'), (b't', b'o'), (b'r', b'a'), (b'p', b'h'), (b'o', b't'), (b'g', b'r'), (b'h', b'o'), (b' ', b'p'), (b'a', b'p')}, 
                     # Delete: {(b'h', b'e'), (b'e', b'r')}
                     #
                     # next time we merge (b' ',b'p'), it will try to delete the new bytes_tuple in saved_cache(b'p',b'h') 
@@ -512,12 +514,10 @@ def _update_tokens_counts(
         new_tokens_counts = tokens_counts
     else:
         # do we have a cache? 
-        if len(saved_cache)==0: 
-            flag_saved_cache_uninitialized=True
-        else:
-            flag_saved_cache_uninitialized=False
-            raise Exception(f"Error: saved_cache is not empty, this shouldn't happen. most_common_pair={most_common_pair}."+
-                            "Because if cannot find any pair in saved_cache, that's an error")
+        if len(saved_cache)!=0: 
+            raise Exception(f"Error: saved_cache is not empty, this shouldn't happen.\n"+\
+                            f"most_common_pair={most_common_pair}.\n"+
+                            f"Because if cannot find any pair in saved_cache, that's an error.")
 
         # iterate through all tokens and update 
         for bytes_tuple, count in list(tokens_counts.items()):
@@ -529,78 +529,46 @@ def _update_tokens_counts(
             new_bytes_tuple = []
             i = 0
             merge_happened = False
-            set_pair_cache_add=set()
             while i < bytes_tuple_count:
                 # Check if the current pair matches the most common pair
                 # print(f"Processing bytes_tuple: {bytes_tuple}, i={i}, count={count}")
-                flag_merge_step=False
                 j=i
                 if i < bytes_tuple_count - 1 and (bytes_tuple[i], bytes_tuple[i + 1]) == most_common_pair:
                     new_bytes_tuple.append(new_token)
                     merge_happened = True
-                    flag_merge_step=True
                     i += 2
                 else:
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
 
-                #DONE: only create cache once or if doesn't exists
-                #DONE: update cache with pairs containing newly created token
-                # if bytes_tuple_count-j>1 and not flag_step_merged:
-                if flag_saved_cache_uninitialized and \
-                not flag_merge_step \
-                and (bytes_tuple_count-1)-j>0: # create pair list to save to cache if cache doesn't exists and no merge happened at this step
-                    #merge didn't happen
-                    set_pair_cache_add.add(tuple([bytes_tuple[j],bytes_tuple[j + 1]])) #non merged pair
-
-                #MERGE happened, update cache with pairs containing newly created token
-                if flag_merge_step:
-                    # PROCESS bytes after merge 
-                    if (j+2)<=(bytes_tuple_count-1): # if there are 2 or more bytes after current needle, update cache if there are pairs merged
-                        # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...)
-                        # if (j+2)<bytes_tuple_count: # if there is a next byte after the merged token
-
-                        #IF (j have more than 2 tokens after and j+2,j+3 is not another most common pair)
-                        # OR j+2 is the last token
-                        if ((j+3)<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) != most_common_pair)) or \
-                        (j+2)==(bytes_tuple_count-1): # in case of scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) 
-                            set_pair_cache_add.add((new_token,bytes_tuple[j+2]))
-
-                        if ((j+3)<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) == most_common_pair)):
-                            set_pair_cache_add.add((new_token,new_token))
-
-                    #PROCESS bytes before merge
-                    if j-1>=0: # if there is a previous byte before the merged token, cache it as new pair
-                        # IF there is a previous byte before the merged token, and (j-2,j-1) is not another most_common_pair
-                        # cache it as new pair
-                        if ((j-2)>=0 and ((bytes_tuple[j-2],bytes_tuple[j-1]) != most_common_pair)) or \
-                        (j==1): 
-                            # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) and i is pointing to the second b'i'
-                            # if (j-1)>=0: #there is at least one byte before the merged token
-                            set_pair_cache_add.add((bytes_tuple[j-1],new_token)) # push in the new pair(prev_token,new_token) to cache
-                            set_pair_cache_add.remove((bytes_tuple[j-1],bytes_tuple[j])) # delete old pair from cache
-                        
-                        #Following is not necessary since (new_token,new_token) already added by the PROCESS_BYTES_AFTER_MERGE
-                        # if ((j-2)>=0 and ((bytes_tuple[j-2],bytes_tuple[j-1]) == most_common_pair)):
-                        #     set_pair_cache_add.add((new_token,new_token))
-
+            # update new_tokens_counts
             new_tokens_counts[tuple(new_bytes_tuple)] += count
 
-            # Update saved_cache
-            for key1 in set_pair_cache_add:
-                # print(f"processing key1={key1}, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
-                if key1 in saved_cache: # key1 already exists in cache
+            # CREATE/UPDATE CACHE
+            a,u,d= get_cache_updates(bytes_tuple, tuple(new_bytes_tuple), skip_update=False)
+
+            for pair in a: 
+                if pair in saved_cache: # key already exists in cache
                     # append the new bytes_tuple into saved_cache[key1]
-                    saved_cache[key1].add(tuple(new_bytes_tuple))
+                    saved_cache[pair].add(tuple(new_bytes_tuple))
                 else:
                     # create new entry
                     new_entry: set[tuple] = set()
                     new_entry.add(tuple(new_bytes_tuple))
-                    saved_cache[key1] = new_entry
-                # print(f"saved_cache[{key1}] added {new_bytes_tuple}")
-                # if  len(new_bytes_tuple)==1:
-                #     print(f"Warning: 1 len insert, this shouldn't happen, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
-
+                    saved_cache[pair] = new_entry
+            for pair in u: 
+                if pair in saved_cache: # key already exists in cache
+                    saved_cache[pair].add(tuple(new_bytes_tuple))
+                else:
+                    # create new entry
+                    new_entry: set[tuple] = set()
+                    new_entry.add(tuple(new_bytes_tuple))
+                    saved_cache[pair] = new_entry
+                    # saved_cache[pair] = set().add(tuple(new_bytes_tuple))
+            ### no need, this part of code will only be called 1st time to create the cache so nothing to remove
+            # for pair in d:
+            #     if pair in saved_cache: # key1 already exists in cache
+            #         saved_cache[pair].remove(bytes_tuple)
     return new_tokens_counts,saved_cache
 
 def _update_tokens_counts_worker(args):
