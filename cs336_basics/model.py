@@ -1,20 +1,22 @@
 import torch
 import torch.nn as nn
-class LinearModel(nn.Module):
+class LinearModule(nn.Module):
     W: nn.Parameter
 
     def __init__(self, 
                 in_features:int, out_features: int,
                 device: torch.device=torch.device('cpu'),
                 dtype: torch.dtype=torch.float32):
-        super(LinearModel,self).__init__()
+        super(LinearModule,self).__init__()
+        # super().__init__()
+        #TODO: change to normal distribution initialization
         self.W=nn.Parameter(torch.empty((out_features, in_features), device=device, dtype=dtype))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.matmul(x, self.W.T)  # This is the correct way to perform matrix multiplication in PyTorch
-        # return x@((self.W).T)
+        # return torch.matmul(x, self.W.T)  # This is the correct way to perform matrix multiplication in PyTorch
+        return x@(self.W.T)
 
-class EmbeddingModel(nn.Module):
+class EmbeddingModule(nn.Module):
     W: nn.Parameter
 
     def __init__(self, 
@@ -22,7 +24,9 @@ class EmbeddingModel(nn.Module):
                 embedding_dim:int,
                 device: torch.device=torch.device('cpu'),
                 dtype: torch.dtype=torch.float32):
-        super(EmbeddingModel,self).__init__()
+        super(EmbeddingModule,self).__init__()
+        #TODO: initialize with normal distribution
+        #TODO: user initialization function
         self.W=nn.Parameter(torch.empty((num_embeddings, embedding_dim), device=device, dtype=dtype))
 
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
