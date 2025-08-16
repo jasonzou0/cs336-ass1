@@ -429,14 +429,22 @@ def _update_tokens_counts(
             # 2. if merge didn't happen, update cache with pairs containing the original bytes_tuple
 
         for pair_del,bytes_tuple,new_bytes_tuple in full_set_pair_cache_delete:
-            if pair_del in saved_cache and bytes_tuple in saved_cache[pair_del]:
-                # print(f"deleting saved_cache[{pair}]")
-                saved_cache[pair_del].remove(bytes_tuple)
-            # if pair_del in saved_cache:
+            # if pair_del in saved_cache and bytes_tuple in saved_cache[pair_del]:
             #     # print(f"deleting saved_cache[{pair}]")
             #     saved_cache[pair_del].remove(bytes_tuple)
-            # else:
-            #     raise Exception(f"Error: set_pair_cache_delete: pair {pair} not found in saved_cache, this shouldn't happen")   
+            if pair_del in saved_cache:
+                if bytes_tuple in saved_cache[pair_del]:
+                    saved_cache[pair_del].remove(bytes_tuple)
+                else:
+                    pass
+                    # TODO: explain why this actually could happen? 
+                    # for example if we have a pair (b'c',b't') and we merged it in (b'c',b't','i','e') 
+                    # and then we try to delete it for (b't',b'i'), but (b'i',b'e') was already merged earlier....hmm, still doesn't sound right 
+                    # raise Exception(f"Error: set_pair_cache_delete: {bytes_tuple} not found in saved_cache[{pair_del}], this shouldn't happen")   
+            else:
+                pass
+                # TODO: explain why this actually could happen? 
+                # raise Exception(f"Error: set_pair_cache_delete: pair {pair_del} not found in saved_cache, this shouldn't happen")   
 
         for pair_upd,bytes_tuple,new_bytes_tuple in full_set_pair_cache_update:
             if pair_upd not in set_pair_cache_delete:
@@ -445,8 +453,10 @@ def _update_tokens_counts(
                         saved_cache[pair_upd].remove(bytes_tuple)
                     saved_cache[pair_upd].add(tuple(new_bytes_tuple))
                 else:
-                    # raise Exception(f"Error: pair {pair} not found in saved_cache, this shouldn't happen")
-                    print(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
+                    pass
+                    # TODO: explain why this actually could happen? 
+                    # raise Exception(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
+                    # print(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
             else:
                 saved_cache[pair_upd].add(tuple(new_bytes_tuple))
 
@@ -519,7 +529,7 @@ def _update_tokens_counts(
                         # key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
                         # use new_bytes_tuple[-1 instead of bytes_tuple[j-1] in case we also did a merge 1 step ago
                         set_pair_cache_add.add(tuple([new_bytes_tuple[-2],new_token])) # push in the new pair(prev_token,new_token) to cache
-                    # TODO: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...)
+                    # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...)
                     # if (j+2)<bytes_tuple_count: # if there is a next byte after the merged token
                     if ((j+3)<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) != most_common_pair)) or \
                     (j+2)==(bytes_tuple_count-1): # in case of scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) 
@@ -618,7 +628,7 @@ def perform_bpe_merges(
         # 2) Form new token and update vocab
         new_token, token_id = _update_vocab_with_merge(most_common_pair, vocab, token_id, merges)
         # debug
-        merges_global=merges
+        merges_global=merges.copy()
         
         # 3) Update / merge the tokens_counts data structure
         # tokens_counts = _update_tokens_counts(tokens_counts, most_common_pair, new_token, heapqueue)
