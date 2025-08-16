@@ -325,6 +325,46 @@ def _update_tokens_counts(
     Returns:
         Updated token counts dictionary
     """
+    def get_pairs(byte_tuple: tuple[bytes]):
+        pairs = set() 
+        i=0
+        while i < len(byte_tuple)-1:
+            pair = (byte_tuple[i], byte_tuple[i + 1])
+            pairs.add(pair)
+            i=i+1
+        return pairs
+
+    def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes]):
+        """
+        Process the cache update based on the old and new byte tuples and the merges.
+        Returns a tuple of sets: (add_set, update_set, delete_set).
+        """
+        add_set = set()
+        update_set = set()
+        delete_set = set()
+
+        # Get pairs from old and new byte tuples
+        old_pairs = get_pairs(old_bytes)
+        new_pairs = get_pairs(new_bytes)
+
+        # Determine deleted pairs (in old_pairs but not in new_pairs)
+        for pair in old_pairs:
+            if pair not in new_pairs:
+                delete_set.add(pair)
+
+        for pair in new_pairs:
+            # Determine added pairs (in new_pairs but not in old_pairs)
+            if pair not in old_pairs:
+                add_set.add(pair)
+            # Determine updated pairs (in both new and old pairs and old not equal new)
+            if pair in old_pairs:
+                update_set.add(pair)
+
+        if new_pairs == old_pairs:
+            update_set = set()  # If no changes, clear update set
+
+        return add_set, update_set, delete_set
+
     # Update the token counts
     new_tokens_counts = defaultdict(int)
 
@@ -348,10 +388,6 @@ def _update_tokens_counts(
                 continue # Skip single-byte tokens
 
             new_bytes_tuple = []
-            set_pair_cache_add=set() # set of new pairs to add to cache after processing
-            set_pair_cache_delete=set() # set of pairs to delete from cache after processing
-            set_pair_cache_update=set() # set of pairs to delete from cache after processing
-
             i = 0
             merge_happened = False
             while i < bytes_tuple_count:
@@ -363,56 +399,27 @@ def _update_tokens_counts(
                 # if i < bytes_tuple_count - 1 and bytes_tuple[i]+bytes_tuple[i + 1] == key0:
                     new_bytes_tuple.append(new_token)
                     merge_happened = True
-                    flag_merge_step=True
                     i += 2
                 else:
                     new_bytes_tuple.append(bytes_tuple[i])
                     i += 1
 
-                # create list of key to update cache
-                # TODO: if (b' t',b'he') is the most common pair, and (b' t',b'he') is also the current bytes_tuple, what should we do?
-                #       it seems we don't need to add anything else to cache? because b' the' has nothing to form a pair anymore in current bytes_tuple?
-                if flag_merge_step:
-                    # merge happened at this step, update cache if cache already exists and there are pairs merged
-                    if bytes_tuple_count-j>2: # if there is a next byte after the merged token, cache it as new pair
-                        # key1=(new_token,bytes_tuple[j+2]) # (merged new_token , next byte) pair
-                        if (j+3<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) != most_common_pair)) or \
-                        (j+3>=bytes_tuple_count): # in case of scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) 
-                            set_pair_cache_add.add(tuple([new_token,bytes_tuple[j+2]]))
-                        # set_pair_cache_add.add(tuple([new_token,bytes_tuple[j+2]]))
-                        set_pair_cache_delete.add(tuple([bytes_tuple[j+1],bytes_tuple[j+2]])) # delete old pair from cache
-                    if (j-1)>=0: # if there is a previous byte before the merged token, cache it as new pair
-                        ### following is not necessary as we only put things into list_cache_pair when merge happened####
-                        # if len(list_cache_pair)>0:
-                        #     _=list_cache_pair.pop()  # delete last item from update list
-                        #################################################################################################
-                        # key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
-                        # use new_bytes_tuple[-1 instead of bytes_tuple[j-1] in case we also did a merge 1 step ago
-                        # key2=(new_bytes_tuple[-2],new_token) # (previous byte, merged new_token ) pair
-                        set_pair_cache_add.add(tuple([new_bytes_tuple[-2],new_token])) # push in the new pair to update
-                        if tuple([bytes_tuple[j-1],bytes_tuple[j]]) in set_pair_cache_update:
-                            set_pair_cache_update.remove(tuple([bytes_tuple[j-1],bytes_tuple[j]])) 
-                        set_pair_cache_delete.add(tuple([bytes_tuple[j-1],bytes_tuple[j]])) # delete old pair from cache
-                else: # not merge step
-                    if bytes_tuple_count-j>1:
-                        set_pair_cache_update.add(tuple([bytes_tuple[j],bytes_tuple[j+1]])) 
-            # TODO: if (b' t',b'he') is the most common pair, and (b' t',b'he') is also the current bytes_tuple, what should we do?
-            #       it seems (b' t',b'he') is both common pair and current bytes_tuple, it didn't del it from tokens_counts?
             if merge_happened:
                 # print(f"Merge happened: {bytes_tuple} -> {new_bytes_tuple}, count={count}")
-                tokens_counts[tuple(new_bytes_tuple)] += tokens_counts[bytes_tuple]
+                tokens_counts[tuple(new_bytes_tuple)] = tokens_counts[bytes_tuple]
                 del tokens_counts[bytes_tuple] 
                 # heapq.heappush(heapqueue, (-count, (new_token, bytes_tuple[1]))) # push new pairs to heap
 
                 # if merge happened, also update the original saved_cache[most_common_pair] items with new_items that have merged new_token
                 #get each pair in the bytes_tuple and update the cache for those pairs with the new bytes_tuple
                 # bytes_tuple_count = len(bytes_tuple)
+                a,u,d= get_cache_updates(bytes_tuple, tuple(new_bytes_tuple))
 
-                for pair in set_pair_cache_add:
+                for pair in a: 
                     full_set_pair_cache_add.add(tuple([pair,bytes_tuple,tuple(new_bytes_tuple)]))
-                for pair in set_pair_cache_update:
+                for pair in u: 
                     full_set_pair_cache_update.add(tuple([pair,bytes_tuple,tuple(new_bytes_tuple)]))
-                for pair in set_pair_cache_delete:
+                for pair in d:
                     full_set_pair_cache_delete.add(tuple([pair,bytes_tuple,tuple(new_bytes_tuple)]))
             else:
                 # If no merge happened, keep the original tuple
@@ -422,7 +429,7 @@ def _update_tokens_counts(
                       f"bytes_tuple={bytes_tuple}, len(bytes_tuple)={len(bytes_tuple)} ,"+
                       f"type(bytes_tuple)={type(bytes_tuple)}"+
                       f", new_token={new_token}, most_common_pair={most_common_pair}")
-                tokens_counts[bytes_tuple] = tokens_counts[bytes_tuple]
+                # tokens_counts[bytes_tuple] = tokens_counts[bytes_tuple]
             
             # update saved_cache
             # 1. if merge happened, update cache with pairs containing newly created token
@@ -439,36 +446,51 @@ def _update_tokens_counts(
                     pass
                     # TODO: explain why this actually could happen? 
                     # for example if we have a pair (b'c',b't') and we merged it in (b'c',b't','i','e') 
-                    # and then we try to delete it for (b't',b'i'), but (b'i',b'e') was already merged earlier....hmm, still doesn't sound right 
-                    # raise Exception(f"Error: set_pair_cache_delete: {bytes_tuple} not found in saved_cache[{pair_del}], this shouldn't happen")   
+                    # and then we try to delete it for (b't',b'i'), 
+                    # but (b'i',b'e') was already merged earlier, so now the byte_tuple is (b'c',b't',b'ie')....
+                    # hmm, still doesn't sound right, when updating(b'i',b'e'), it should delete it already for saved_cache[(b't',b'i')]
+                    # need to think again
+                    # raise Exception(f"Error: set_pair_cache_delete: this shouldn't happen:\n"+  
+                    #                 f"{bytes_tuple} not found in saved_cache[{pair_del}],\n"+ \
+                    #                 f"bytes_tuple={bytes_tuple},\n"+ \
+                    #                 f"new_bytes_tuple={new_bytes_tuple},\n"+\
+                    #                 f"most_common_pair={most_common_pair}")   
             else:
                 pass
-                # TODO: explain why this actually could happen? 
-                # raise Exception(f"Error: set_pair_cache_delete: pair {pair_del} not found in saved_cache, this shouldn't happen")   
+                # TODO: explain why this actually could happen? - SHOULDN'T
+                raise Exception(f"Error: set_pair_cache_delete: this shouldn't happen:\n"+  
+                                f"{pair_del} not found in saved_cache,\n"+ \
+                                f"bytes_tuple={bytes_tuple},\n"+ \
+                                f"new_bytes_tuple={new_bytes_tuple},\n"+\
+                                f"most_common_pair={most_common_pair}")   
 
         for pair_upd,bytes_tuple,new_bytes_tuple in full_set_pair_cache_update:
-            if pair_upd not in set_pair_cache_delete:
-                if pair_upd in saved_cache:
-                    if bytes_tuple in saved_cache[pair_upd]:
-                        saved_cache[pair_upd].remove(bytes_tuple)
-                    saved_cache[pair_upd].add(tuple(new_bytes_tuple))
-                else:
-                    pass
-                    # TODO: explain why this actually could happen? 
-                    # raise Exception(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
-                    # print(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
+            # following could actually happen, for example we have a pair (b'i',b'n',b'i',b'n',b'n',b'i',b'c',b'e')
+            # and we merged (b'i',b'n'), it will try to delete for the (b'n',b'i') pair between (b'n', b'i' b'n', b'i'), 
+            # but then try to update for the (b'n',b'i') pair before b'c'.
+            # so this if below is not needed
+            # if (pair_upd,bytes_tuple,new_bytes_tuple) not in set_pair_cache_delete:
+
+            if pair_upd in saved_cache:
+                if bytes_tuple in saved_cache[pair_upd]:
+                    saved_cache[pair_upd].remove(bytes_tuple)
+                saved_cache[pair_upd].add(new_bytes_tuple)
             else:
-                saved_cache[pair_upd].add(tuple(new_bytes_tuple))
+                saved_cache[pair_upd]=set()
+                saved_cache[pair_upd].add(new_bytes_tuple)
+                # TODO: explain why this actually could happen? Strange: even if it was deleted, the empty set() should still exists?
+                # raise Exception(f"Warning1: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
+                # print(f"Warning: set_pair_update: pair {pair_upd} not found in saved_cache, this shouldn't happen")
 
         for pair_add,bytes_tuple,new_bytes_tuple in full_set_pair_cache_add:
             # print(f"processing key1={key1}, new_bytes_tuple={tuple(new_bytes_tuple)}, new_token={new_token}")
             if pair_add in saved_cache: # key1 already exists in cache
                 # append the new bytes_tuple into saved_cache[key1]
-                saved_cache[pair_add].add(tuple(new_bytes_tuple))
+                saved_cache[pair_add].add(new_bytes_tuple)
             else:
                 # create new entry
                 new_entry: set[tuple] = set()
-                new_entry.add(tuple(new_bytes_tuple))
+                new_entry.add(new_bytes_tuple)
                 saved_cache[pair_add] = new_entry
 
         # do we need the following line?
@@ -482,8 +504,8 @@ def _update_tokens_counts(
             flag_saved_cache_uninitialized=True
         else:
             flag_saved_cache_uninitialized=False
-            # raise Exception(f"Error: saved_cache is not empty, this shouldn't happen. most_common_pair={most_common_pair}."+
-            #                 "Because if cannot find any pair in saved_cache, that's an error")
+            raise Exception(f"Error: saved_cache is not empty, this shouldn't happen. most_common_pair={most_common_pair}."+
+                            "Because if cannot find any pair in saved_cache, that's an error")
 
         # iterate through all tokens and update 
         for bytes_tuple, count in list(tokens_counts.items()):
@@ -515,26 +537,40 @@ def _update_tokens_counts(
                 # if bytes_tuple_count-j>1 and not flag_step_merged:
                 if flag_saved_cache_uninitialized and \
                 not flag_merge_step \
-                and bytes_tuple_count-j>1:# create pair list to save to cache if cache doesn't exists and no merge happened at this step
+                and (bytes_tuple_count-1)-j>0: # create pair list to save to cache if cache doesn't exists and no merge happened at this step
                     #merge didn't happen
                     set_pair_cache_add.add(tuple([bytes_tuple[j],bytes_tuple[j + 1]])) #non merged pair
-                if (j+1)<=(bytes_tuple_count-1) and flag_merge_step: # update cache if there are pairs merged
-                    #merge happened
-                    # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) and i is pointing to the second b'i'
-                    # if (j-1)>=0: #there is at least one byte before the merged token
-                    if ((j-2)>=0 and ((bytes_tuple[j-2],bytes_tuple[j-1]) != most_common_pair)) or \
-                    (j==1): 
-                        # if len(set_pair_cache_add)>0:
-                        #     _=set_pair_cache_add.pop()  # delete last item from update list
-                        # key2=(bytes_tuple[j-1],bytes_tuple[j]+bytes_tuple[j + 1]) # (previous byte, merged new_token ) pair
-                        # use new_bytes_tuple[-1 instead of bytes_tuple[j-1] in case we also did a merge 1 step ago
-                        set_pair_cache_add.add(tuple([new_bytes_tuple[-2],new_token])) # push in the new pair(prev_token,new_token) to cache
-                    # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...)
-                    # if (j+2)<bytes_tuple_count: # if there is a next byte after the merged token
-                    if ((j+3)<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) != most_common_pair)) or \
-                    (j+2)==(bytes_tuple_count-1): # in case of scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) 
-                        key1=(new_token,bytes_tuple[j+2]) # (merged new_token , next byte) pair
-                        set_pair_cache_add.add(key1)
+
+                #MERGE happened, update cache with pairs containing newly created token
+                if flag_merge_step:
+                    # PROCESS bytes after merge 
+                    if (j+2)<=(bytes_tuple_count-1): # if there are 2 or more bytes after current needle, update cache if there are pairs merged
+                        # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...)
+                        # if (j+2)<bytes_tuple_count: # if there is a next byte after the merged token
+
+                        #IF (j have more than 2 tokens after and j+2,j+3 is not another most common pair)
+                        # OR j+2 is the last token
+                        if ((j+3)<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) != most_common_pair)) or \
+                        (j+2)==(bytes_tuple_count-1): # in case of scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) 
+                            set_pair_cache_add.add((new_token,bytes_tuple[j+2]))
+
+                        if ((j+3)<bytes_tuple_count and ((bytes_tuple[j+2],bytes_tuple[j+3]) == most_common_pair)):
+                            set_pair_cache_add.add((new_token,new_token))
+
+                    #PROCESS bytes before merge
+                    if j-1>=0: # if there is a previous byte before the merged token, cache it as new pair
+                        # IF there is a previous byte before the merged token, and (j-2,j-1) is not another most_common_pair
+                        # cache it as new pair
+                        if ((j-2)>=0 and ((bytes_tuple[j-2],bytes_tuple[j-1]) != most_common_pair)) or \
+                        (j==1): 
+                            # FIXED: think about scenarios like (b'i',b'n') and (...,b'i',b'n',b'i',b'n'...) and i is pointing to the second b'i'
+                            # if (j-1)>=0: #there is at least one byte before the merged token
+                            set_pair_cache_add.add((bytes_tuple[j-1],new_token)) # push in the new pair(prev_token,new_token) to cache
+                            set_pair_cache_add.remove((bytes_tuple[j-1],bytes_tuple[j])) # delete old pair from cache
+                        
+                        #Following is not necessary since (new_token,new_token) already added by the PROCESS_BYTES_AFTER_MERGE
+                        # if ((j-2)>=0 and ((bytes_tuple[j-2],bytes_tuple[j-1]) == most_common_pair)):
+                        #     set_pair_cache_add.add((new_token,new_token))
 
             new_tokens_counts[tuple(new_bytes_tuple)] += count
 
