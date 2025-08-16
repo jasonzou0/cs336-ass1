@@ -547,15 +547,10 @@ def _update_tokens_counts(
             # CREATE/UPDATE CACHE
             a,u,d= get_cache_updates(bytes_tuple, tuple(new_bytes_tuple), skip_update=False)
 
-            for pair in a: 
-                if pair in saved_cache: # key already exists in cache
-                    # append the new bytes_tuple into saved_cache[key1]
-                    saved_cache[pair].add(tuple(new_bytes_tuple))
-                else:
-                    # create new entry
-                    new_entry: set[tuple] = set()
-                    new_entry.add(tuple(new_bytes_tuple))
-                    saved_cache[pair] = new_entry
+            ### no need, this part of code will only be called 1st time to create the cache so nothing to remove
+            # for pair in d:
+            #     if pair in saved_cache: # key1 already exists in cache
+            #         saved_cache[pair].remove(bytes_tuple)
             for pair in u: 
                 if pair in saved_cache: # key already exists in cache
                     saved_cache[pair].add(tuple(new_bytes_tuple))
@@ -565,10 +560,15 @@ def _update_tokens_counts(
                     new_entry.add(tuple(new_bytes_tuple))
                     saved_cache[pair] = new_entry
                     # saved_cache[pair] = set().add(tuple(new_bytes_tuple))
-            ### no need, this part of code will only be called 1st time to create the cache so nothing to remove
-            # for pair in d:
-            #     if pair in saved_cache: # key1 already exists in cache
-            #         saved_cache[pair].remove(bytes_tuple)
+            for pair in a: 
+                if pair in saved_cache: # key already exists in cache
+                    # append the new bytes_tuple into saved_cache[key1]
+                    saved_cache[pair].add(tuple(new_bytes_tuple))
+                else:
+                    # create new entry
+                    new_entry: set[tuple] = set()
+                    new_entry.add(tuple(new_bytes_tuple))
+                    saved_cache[pair] = new_entry
     return new_tokens_counts,saved_cache
 
 def _update_tokens_counts_worker(args):
