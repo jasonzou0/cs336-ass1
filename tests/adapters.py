@@ -13,6 +13,7 @@ from einops import einsum
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
+from cs336_basics.linear import Linear
 
 
 def run_linear(
@@ -33,9 +34,9 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    # TODO: rewrite using Pytorch module and implements weights initialization + loading
-    return einsum(in_features, weights, "... d_in, d_out d_in -> ... d_out")
+    linear_module = Linear(d_in=d_in, d_out=d_out)
+    linear_module.load_state_dict({"weight": weights})
+    return linear_module(in_features)
 
 
 def run_embedding(
