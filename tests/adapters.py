@@ -14,6 +14,7 @@ from einops import einsum
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.linear import Linear
+from cs336_basics.embedding import Embedding
 
 
 def run_linear(
@@ -58,7 +59,9 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+    emb_module = Embedding(vocab_size, d_model)
+    emb_module.load_state_dict({"emb": weights})
+    return emb_module(token_ids)
 
 
 def run_swiglu(
