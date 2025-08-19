@@ -15,13 +15,15 @@ class RmsNorm(torch.nn.Module):
        
 
     def forward(self, x: Float[Tensor, "batch seq d_model"]) -> Float[Tensor, "batch seq d_model"]:
-        def rms_inverse(x: Float[Tensor, "d_model"], reduced_axis) -> Float[Tensor, ""]:
-            return 1 / torch.sqrt(torch.mean(x ** 2, axis=reduced_axis) + self.eps)
+        def rms(x: Float[Tensor, "d_model"], reduced_axis) -> Float[Tensor, ""]:
+            """Root Mean Square calculation."""
+            return torch.sqrt(torch.mean(x ** 2, axis=reduced_axis) + self.eps)
 
         in_dtype = x.dtype
-        x = x.to(torch.float32) # Upcast to float32 to prevent overflow
-        norm_inverse: Float[Tensor, "batch seq"] = reduce(x, "batch seq d_model -> batch seq", reduction=rms_inverse)
-        res: Float[Tensor, "batch seq d_model"] = x * rearrange(norm_inverse, "batch seq -> batch seq 1") * rearrange(self.g, "d_model -> 1 1 d_model")
+        # Upcast to float32 to prevent overflow
+        x = x.to(torch.float32)
+        norm: Float[Tensor, "batch seq"] = reduce(x, "batch seq d_model -> batch seq", reduction=rms)
+        res: Float[Tensor, "batch seq d_model"] = x * rearrange(self.g, "d_model -> 1 1 d_model") / rearrange(norm, "batch seq -> batch seq 1")
         return res.to(in_dtype)
 
 
