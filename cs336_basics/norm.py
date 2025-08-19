@@ -9,7 +9,8 @@ class RmsNorm(torch.nn.Module):
     """Root Mean Square Layer Normalization."""
     def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
         super().__init__()
-        self.g: Float[Tensor, "d_model"] = torch.nn.Parameter(torch.ones((d_model,), device=device, dtype=dtype))
+        # This is a learnable "gain" parameter in RMS normalization.
+        self.gain: Float[Tensor, "d_model"] = torch.nn.Parameter(torch.ones((d_model,), device=device, dtype=dtype))
         # eps is a non-learnable parameter, so we register it as a buffer
         self.register_buffer("eps", torch.tensor(eps, device=device, dtype=dtype))
        
@@ -23,7 +24,7 @@ class RmsNorm(torch.nn.Module):
         # Upcast to float32 to prevent overflow
         x = x.to(torch.float32)
         norm: Float[Tensor, "batch seq"] = reduce(x, "batch seq d_model -> batch seq", reduction=rms)
-        res: Float[Tensor, "batch seq d_model"] = x * rearrange(self.g, "d_model -> 1 1 d_model") / rearrange(norm, "batch seq -> batch seq 1")
+        res: Float[Tensor, "batch seq d_model"] = x * rearrange(self.gain, "d_model -> 1 1 d_model") / rearrange(norm, "batch seq -> batch seq 1")
         return res.to(in_dtype)
 
 
