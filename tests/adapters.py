@@ -13,10 +13,7 @@ from einops import einsum
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.linear import Linear
-from cs336_basics.embedding import Embedding
-from cs336_basics.norm import RmsNorm
-from cs336_basics.swiglu import SwiGLU
+from cs336_basics.module import Linear, Embedding, RmsNorm, SwiGLU
 
 
 def run_linear(
