@@ -4,11 +4,11 @@ import os
 from typing import IO, Any, BinaryIO
 from collections.abc import Iterable
 from jaxtyping import Float, Int
-
+import numpy as np
 import numpy.typing as npt
 import torch
 from torch import Tensor
-
+from cs336_basics.my_tokenizer import BpeTokenizer
 
 def run_linear(
     d_in: int,
@@ -29,8 +29,23 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    if weights.ndim !=2 or weights.shape != (d_out,d_in):
+        raise ValueError(f" weights mismatch")
+    if in_features.shape[-1] != d_in:
+        raise ValueError(f" in_features shape error")
+    # Ensure device & dtype alignment
+    if weights.device != in_features.device or weights.dtype != in_features.dtype:
+        weights = weights.to(device=in_features.device, dtype=in_features.dtype)
 
+    ## need to add normal distribution to init the weights
+    torch.nn.init.normal_(weights, mean=0.0, std=0.02)
+
+    # Core: y = x @ W^T (no bias)
+    # Works for any leading batch dims "..."
+    return in_features @ weights.transpose(0, 1)
+    # Equivalent alternatives:
+    # return torch.einsum("...i,oi->...o", in_features, weights)
+    # return torch.nn.functional.linear(in_features, weights, bias=None)
 
 def run_embedding(
     vocab_size: int,
@@ -51,7 +66,32 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+        # Basic shape checks
+    if weights.ndim != 2 or tuple(weights.shape) != (vocab_size, d_model):
+        raise ValueError(f"weights must be [{vocab_size}, {d_model}], got {tuple(weights.shape)}")
+
+    # Embedding expects int64 (long) indices; keep everything on the same device
+    token_ids = token_ids.to(device=weights.device, dtype=torch.long)
+
+    # Optional: bounds check to catch OOV IDs early
+    if torch.any(token_ids < 0) or torch.any(token_ids >= vocab_size):
+        bad = token_ids[(token_ids < 0) | (token_ids >= vocab_size)]
+        raise IndexError(f"Token id(s) out of range [0, {vocab_size}): {bad[:10].tolist()}...")
+
+    # Core: gather rows from the embedding matrix.
+    # Two equivalent ways:
+
+    # init with normalization
+    torch.nn.init.normal_(weights, mean=0.0, std=0.02)
+
+    # 1) Simple advanced indexing (most readable):
+    out = weights[token_ids]                 # shape: [..., d_model]
+
+    # 2) Or via index_select on flattened IDs (explicit):
+    # flat = token_ids.reshape(-1)
+    # out = weights.index_select(0, flat).reshape(*token_ids.shape, d_model)
+
+    return out
 
 
 def run_swiglu(
@@ -83,7 +123,27 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    if w1_weight.shape != (d_ff, d_model):
+        raise ValueError(f"w1_weight must be [{d_ff}, {d_model}], got {tuple(w1_weight.shape)}")
+    if w3_weight.shape != (d_ff, d_model):
+        raise ValueError(f"w3_weight must be [{d_ff}, {d_model}], got {tuple(w3_weight.shape)}")
+    if w2_weight.shape != (d_model, d_ff):
+        raise ValueError(f"w2_weight must be [{d_model}, {d_ff}], got {tuple(w2_weight.shape)}")
+    if in_features.shape[-1] != d_model:
+        raise ValueError(f"in_features last dim must be d_model={d_model}, got {in_features.shape[-1]}")
+
+    # ---- align device & dtype to inputs ----
+    dev, dt = in_features.device, in_features.dtype
+    w1 = w1_weight.to(dev, dt)
+    w2 = w2_weight.to(dev, dt)
+    w3 = w3_weight.to(dev, dt)
+
+    x = in_features
+    a = x @ w1.transpose(0, 1)      # [..., d_ff]
+    b = x @ w3.transpose(0, 1)      # [..., d_ff]
+    g = torch.nn.functional.silu(a) * b               # SwiGLU gating
+    y = g @ w2.transpose(0, 1)      # [..., d_model]
+    return y
 
 
 def run_scaled_dot_product_attention(
@@ -414,8 +474,19 @@ def run_get_batch(
         Tuple of torch.LongTensors of shape (batch_size, context_length). The first tuple item
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
+
     """
-    raise NotImplementedError
+
+    N = int(len(dataset))
+    if N < context_length +1:
+        raise ValueError(f"Dataset too short")
+    starts = np.random.randint(0, N - context_length, size = batch_size)
+    x_np= np.stack([dataset[s : s+context_length] for s in starts])
+    y_np = np.stack([dataset[s+1: s+1+context_length] for s in starts])
+    x = torch.as_tensor(x_np, dtype= torch.long, device = device)
+    y = torch.as_tensor(y_np, dtype= torch.long, device  = device)
+    return x,y
+
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -558,8 +629,10 @@ def get_tokenizer(
 
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
+
     """
-    raise NotImplementedError
+    return BpeTokenizer(vocab, merges, special_tokens or [])
+
 
 
 def run_train_bpe(

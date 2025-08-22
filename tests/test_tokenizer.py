@@ -11,6 +11,7 @@ import tiktoken
 
 from .adapters import get_tokenizer
 from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
+from cs336_basics.my_tokenizer import BpeTokenizer
 
 VOCAB_PATH = FIXTURES_PATH / "gpt2_vocab.json"
 MERGES_PATH = FIXTURES_PATH / "gpt2_merges.txt"
@@ -75,12 +76,14 @@ def get_tokenizer_from_vocab_merges_path(
 
 
 def test_roundtrip_empty():
+    print(f"Debug Info: vocab_path= {VOCAB_PATH}, meres_path={MERGES_PATH}")
     tokenizer = get_tokenizer_from_vocab_merges_path(
         vocab_path=VOCAB_PATH,
         merges_path=MERGES_PATH,
     )
     test_string = ""
     encoded_ids = tokenizer.encode(test_string)
+    print(f"Debug Info: encoded_ids={encoded_ids}")
     decoded_string = tokenizer.decode(encoded_ids)
     assert test_string == decoded_string
 

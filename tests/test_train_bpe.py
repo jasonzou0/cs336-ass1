@@ -1,8 +1,10 @@
 import json
 import time
 
-from .adapters import run_train_bpe
 from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
+from  cs336_basics.my_trainer import run_train_bpe
+
+
 
 
 def test_train_bpe_speed():
