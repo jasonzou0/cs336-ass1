@@ -604,16 +604,6 @@ class OptimizedBPEMerger:
             print(f"   Pairs updated: {self.stats['pairs_updated']:,}")
             print(f"   Heap operations: {self.stats['heap_operations']:,}")
 
-        # TODO: tell claude to remove this block of code.
-        # Convert back from index-based to dictionary format for compatibility        
-        tokens_counts.clear()
-        for i in range(len(self.tokens_list)):
-            token_tuple = self.tokens_list[i]
-            count = self.tokens_counts[i]
-            if token_tuple in tokens_counts:
-                tokens_counts[token_tuple] += count
-            else:
-                tokens_counts[token_tuple] = count
 
         return vocab, merges
 
