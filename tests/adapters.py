@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import IO, Any, BinaryIO
 from collections.abc import Iterable
 from jaxtyping import Float, Int
@@ -8,6 +9,10 @@ from jaxtyping import Float, Int
 import numpy.typing as npt
 import torch
 from torch import Tensor
+
+# Import from the proper cs336_basics package
+from cs336_basics.train_bpe import train_bpe
+from cs336_basics.tokenizer import Tokenizer
 
 
 def run_linear(
@@ -542,7 +547,8 @@ def run_load_checkpoint(
 def get_tokenizer(
     vocab: dict[int, bytes],
     merges: list[tuple[bytes, bytes]],
-    special_tokens: list[str] | None = None,
+    special_tokens: list[str],
+    **kwargs,
 ) -> Any:
     """Given a vocabulary, a list of merges, and a list of special tokens,
     return a BPE tokenizer that uses the provided vocab, merges, and special tokens.
@@ -559,7 +565,12 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return Tokenizer(
+        vocab=vocab,
+        merges=merges,
+        special_tokens=special_tokens,
+        **kwargs,
+    )
 
 
 def run_train_bpe(
@@ -589,4 +600,18 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    # Call your actual train_bpe function from src/train_bpe.py
+    vocab, merges = train_bpe(
+        input_path=input_path, 
+        vocab_size=vocab_size, 
+        special_tokens=special_tokens,
+        use_optimization=True, 
+        **kwargs)
+    
+    # Log the results
+    actual_vocab_size = len(vocab)
+    print(f"BPE Training completed:")
+    print(f"  Input vocab size: {vocab_size}")
+    print(f"  Final vocab size: {actual_vocab_size}")
+    
+    return vocab, merges

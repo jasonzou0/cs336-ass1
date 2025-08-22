@@ -9,7 +9,7 @@ import psutil
 import pytest
 import tiktoken
 
-from .adapters import get_tokenizer
+from .adapters import get_tokenizer, run_train_bpe
 from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
 
 VOCAB_PATH = FIXTURES_PATH / "gpt2_vocab.json"
@@ -40,6 +40,7 @@ def get_tokenizer_from_vocab_merges_path(
     vocab_path: str | os.PathLike,
     merges_path: str | os.PathLike,
     special_tokens: list[str] | None = None,
+    **kwargs,
 ):
     gpt2_byte_decoder = {v: k for k, v in gpt2_bytes_to_unicode().items()}
     with open(vocab_path) as vocab_f:
@@ -71,7 +72,36 @@ def get_tokenizer_from_vocab_merges_path(
         )
         for merge_token_1, merge_token_2 in gpt2_bpe_merges
     ]
-    return get_tokenizer(vocab, merges, special_tokens)
+    return get_tokenizer(vocab, merges, special_tokens, **kwargs)
+
+
+def test_train_and_tokenize_sennrich():
+    input_path = FIXTURES_PATH / "sennrich.en"
+    vocab, merges = run_train_bpe(
+        input_path=input_path,
+        vocab_size=263,
+        special_tokens=["<|endoftext|>"],
+        pretokenizer_name="ws",
+    )
+
+    # Verify there are exactly 263 tokens in the vocab
+    assert len(vocab) == 263
+    # Expected tokens based on the merges we observed:
+    # st, ne, ow, and combinations with spaces and 'e' prefix
+    expected_token_strings = ['st', 'est', 'ow', 'low', 'west', 'ne']
+    assert list(vocab.values())[-6:] == [token.encode('utf-8') for token in expected_token_strings]
+    vocab_to_id = {v: k for k, v in vocab.items()}
+    assert [vocab_to_id[tok.encode()] for tok in expected_token_strings] == list(range(257, 263))
+
+    tokenizer = get_tokenizer(
+        vocab=vocab,
+        merges=merges,
+        special_tokens=["<|endoftext|>"],
+        pretokenizer_name="ws",
+        # debug=True,
+    )
+    assert tokenizer.encode("newest") == [vocab_to_id[tok.encode()] for tok in ['ne', 'west']]
+    assert tokenizer.encode("wildwest") == [vocab_to_id[tok.encode()] for tok in ['w', 'i', 'l', 'd', 'west']]
 
 
 def test_roundtrip_empty():
@@ -175,7 +205,8 @@ def test_roundtrip_ascii_string():
 def test_ascii_string_matches_tiktoken():
     reference_tokenizer = tiktoken.get_encoding("gpt2")
     tokenizer = get_tokenizer_from_vocab_merges_path(
-        vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"]
+        vocab_path=VOCAB_PATH, merges_path=MERGES_PATH, special_tokens=["<|endoftext|>"],
+        debug=True,
     )
     test_string = "Hello, how are you?"
 
