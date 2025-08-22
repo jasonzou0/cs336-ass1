@@ -8,7 +8,7 @@ from multiprocessing import Pool
 
 import regex as re
 
-MERGE_LOG_INTERVAL = 100 
+MERGE_LOG_INTERVAL = 100
 
 class MaxHeapItem:
     """Wrapper for heap items that implements max-heap with proper tie-breaking."""
@@ -315,6 +315,8 @@ class OptimizedBPEMerger:
     2. Incremental token updates (only affected tokens) 
     3. Cached pair frequencies (no recomputation)
     4. Minimal memory allocation
+    5. Batch processing for set operations - collects all pair changes first,
+       then applies them in batches to minimize set operations and heap updates
     """
 
     def __init__(self, debug: bool = False):
@@ -359,7 +361,7 @@ class OptimizedBPEMerger:
         self._build_initial_pair_tracking()
 
         if self.debug:
-            total_pairs = sum(max(0, len(self.tokens_list[i]) - 1) * self.tokens_counts[i] 
+            total_pairs = sum((len(self.tokens_list[i]) - 1 if len(self.tokens_list[i]) >= 2 else 0) * self.tokens_counts[i] 
                             for i in range(len(self.tokens_list)) if self.tokens_active[i])
             print(f"   📊 Total pair instances: {total_pairs:,}")
             print(f"   📊 Unique pairs: {len(self.pair_counts):,}")
@@ -452,8 +454,9 @@ class OptimizedBPEMerger:
 
     def update_tokens_incremental(self, merge_pair: tuple, new_token: bytes) -> int:
         """
-        Update tokens incrementally - batch process affected tokens for efficiency.
-        Major optimization: batch all pair tracking updates to minimize set operations.
+        Update tokens incrementally with optimized batch processing for set operations.
+
+        Key optimization: Batch all pair changes to minimize set operations and heap updates.
 
         Returns:
             Number of tokens that were modified.
@@ -467,15 +470,14 @@ class OptimizedBPEMerger:
         if self.debug:
             print(f"   🔄 Updating {len(affected_indices)} affected tokens")
 
-        # Batch collect all changes first
+        # Batch collect all changes first - no modifications to data structures yet
         tokens_to_add = []  # [(new_token_tuple, count), ...]
         indices_to_deactivate = []
 
-        # Batch tracking: collect all pair changes before applying them
-        pairs_to_remove = defaultdict(list)  # pair -> [count_delta_1, count_delta_2, ...]
-        pairs_to_add = defaultdict(list)     # pair -> [count_delta_1, count_delta_2, ...]
-        indices_to_remove = defaultdict(set)  # pair -> {idx1, idx2, ...}
-        indices_to_add = defaultdict(list)    # pair -> [(idx, count), ...]
+        # Batch collection for pair changes - aggregate all changes before applying
+        pair_count_changes = defaultdict(int)  # pair -> net count change
+        pair_position_removals = defaultdict(set)  # pair -> indices to remove
+        pair_position_additions = defaultdict(set)  # pair -> indices to add
 
         # First pass: collect all changes without modifying data structures
         for token_idx in affected_indices:
@@ -485,102 +487,99 @@ class OptimizedBPEMerger:
             old_token_tuple = self.tokens_list[token_idx]
             count = self.tokens_counts[token_idx]
 
-            # Inline merge operation to avoid 2.6M+ function calls
-            old_token_len = len(old_token_tuple)
-            if old_token_len < 2:
-                new_token_tuple = old_token_tuple
-            else:
-                # Inline the merge logic for maximum performance
-                result = []
-                merge_first, merge_second = merge_pair
-                i = 0
-                while i < old_token_len:
-                    # Check if we can merge at current position (avoid tuple creation)
-                    if (i < old_token_len - 1 and 
-                        old_token_tuple[i] == merge_first and old_token_tuple[i+1] == merge_second):
-                        result.append(new_token)
-                        i += 2  # Skip both parts of the merged pair
-                    else:
-                        result.append(old_token_tuple[i])
-                        i += 1
-                new_token_tuple = tuple(result)
-
-            # Batch collect old pairs to remove
-            old_token_len = len(old_token_tuple)
-            if old_token_len >= 2:
-                for i in range(old_token_len - 1):
-                    pair = (old_token_tuple[i], old_token_tuple[i+1])
-                    pairs_to_remove[pair].append(-count)
-                    indices_to_remove[pair].add(token_idx)
+            # Create new token by performing the merge
+            new_token_tuple = self._perform_merge_in_token(old_token_tuple, merge_pair, new_token)
 
             tokens_to_add.append((new_token_tuple, count))
             indices_to_deactivate.append(token_idx)
             tokens_modified += 1
 
-        # Second pass: deactivate old tokens (without updating pair tracking yet)
+            # Collect pair changes for old token (removals)
+            if len(old_token_tuple) >= 2:
+                for i in range(len(old_token_tuple) - 1):
+                    pair = (old_token_tuple[i], old_token_tuple[i+1])
+                    pair_count_changes[pair] -= count
+                    pair_position_removals[pair].add(token_idx)
+
+        # Second pass: batch deactivate old tokens (no pair updates yet)
         for token_idx in indices_to_deactivate:
             self.tokens_active[token_idx] = False
 
-        # Third pass: add new tokens and collect their pair updates
-        new_indices = []
+        # Third pass: batch add new tokens and collect their pair changes
         for new_token_tuple, count in tokens_to_add:
             new_idx = len(self.tokens_list)
             self.tokens_list.append(new_token_tuple)
             self.tokens_counts.append(count)
             self.tokens_active.append(True)
 
-            # Batch collect new pairs to add
-            new_token_len = len(new_token_tuple)
-            if new_token_len >= 2:
-                for i in range(new_token_len - 1):
+            # Collect pair changes for new token (additions)
+            if len(new_token_tuple) >= 2:
+                for i in range(len(new_token_tuple) - 1):
                     pair = (new_token_tuple[i], new_token_tuple[i+1])
-                    pairs_to_add[pair].append(count)
-                    indices_to_add[pair].append((new_idx, count))
+                    pair_count_changes[pair] += count
+                    pair_position_additions[pair].add(new_idx)
 
-            new_indices.append(new_idx)
-
-        # Fourth pass: batch apply all pair tracking updates
-        # Remove old pair tracking
-        for pair, count_deltas in pairs_to_remove.items():
-            total_delta = sum(count_deltas)
-            if total_delta != 0:
-                self._update_pair_count(pair, total_delta)
-            # Remove indices from position tracking
-            for idx in indices_to_remove[pair]:
-                self.pair_positions[pair].discard(idx)
-
-        # Add new pair tracking
-        for pair, count_deltas in pairs_to_add.items():
-            total_delta = sum(count_deltas)
-            if total_delta != 0:
-                self._update_pair_count(pair, total_delta)
-            # Add indices to position tracking
-            for idx, count in indices_to_add[pair]:
-                self.pair_positions[pair].add(idx)
+        # Fourth pass: batch apply all pair tracking changes
+        self._batch_update_pair_tracking(pair_count_changes, pair_position_removals, pair_position_additions)
 
         self.stats['tokens_scanned'] += tokens_modified
         return tokens_modified
 
+    def _batch_update_pair_tracking(
+        self,
+        pair_count_changes: Dict[tuple, int],
+        pair_position_removals: Dict[tuple, Set[int]],
+        pair_position_additions: Dict[tuple, Set[int]]
+    ):
+        """
+        Batch update pair tracking with minimal set operations and heap updates.
+
+        This method processes all pair changes in a single pass to minimize:
+        - Set add/remove operations 
+        - Heap pushes (only one per changed pair)
+        - Dictionary lookups
+        """
+        # Get all pairs that need updates (union of all change types)
+        all_affected_pairs = set(pair_count_changes.keys()) | set(pair_position_removals.keys()) | set(pair_position_additions.keys())
+
+        for pair in all_affected_pairs:
+            # Batch update position tracking for this pair
+            if pair in pair_position_removals:
+                # Use difference_update for efficient batch removal
+                self.pair_positions[pair].difference_update(pair_position_removals[pair])
+
+            if pair in pair_position_additions:
+                # Use update for efficient batch addition
+                self.pair_positions[pair].update(pair_position_additions[pair])
+
+            # Update count and heap (only once per pair)
+            if pair in pair_count_changes:
+                count_delta = pair_count_changes[pair]
+                if count_delta != 0:  # Only update if there's an actual change
+                    self._update_pair_count(pair, count_delta)
+
+        # Update stats for batch operations
+        self.stats['pairs_updated'] += len(all_affected_pairs)
+
     def _remove_token_from_tracking_by_index(self, token_idx: int):
-        """Remove a token from pair tracking by index - optimized version."""
+        """Remove a token from pair tracking by index."""
         if not self.tokens_active[token_idx]:
             return
 
         token_tuple = self.tokens_list[token_idx]
         count = self.tokens_counts[token_idx]
         token_len = len(token_tuple)
-
+ 
         # Inline pair extraction and processing to reduce function calls
         if token_len >= 2:
             for i in range(token_len - 1):
                 pair = (token_tuple[i], token_tuple[i+1])
-                # Remove this index from the pair's position set
-                pair_positions = self.pair_positions[pair]
-                pair_positions.discard(token_idx)
+                # Remove this index from the pair's position set (O(1) operation)
+                self.pair_positions[pair].discard(token_idx)
                 self._update_pair_count(pair, -count)
 
     def _add_new_token(self, token_tuple: tuple, count: int) -> int:
-        """Add a new token to the end of the token lists - optimized version."""
+        """Add a new token to the end of the token lists."""
         new_idx = len(self.tokens_list)
         self.tokens_list.append(token_tuple)
         self.tokens_counts.append(count)
@@ -596,6 +595,34 @@ class OptimizedBPEMerger:
 
         return new_idx
 
+    def _perform_merge_in_token(self, token_tuple: tuple, merge_pair: tuple, new_token: bytes) -> tuple:
+        """
+        Perform merge operation within a single token with optimized tuple operations.
+
+        Optimizations:
+        - Pre-computes tuple length to avoid repeated len() calls
+        - Uses direct element comparison instead of tuple creation
+        - Avoids unnecessary tuple comparisons
+        """
+        result = []
+        i = 0
+
+        # Pre-compute values for performance
+        token_len = len(token_tuple)
+        merge_first, merge_second = merge_pair  # Unpack once for direct comparison
+
+        while i < token_len:
+            # Check if we can merge at current position using direct element comparison
+            if (i < token_len - 1 and
+                token_tuple[i] == merge_first and
+                token_tuple[i+1] == merge_second):
+                result.append(new_token)
+                i += 2  # Skip both parts of the merged pair
+            else:
+                result.append(token_tuple[i])
+                i += 1
+
+        return tuple(result)
 
     def perform_optimized_merges(
         self, 
