@@ -48,3 +48,12 @@ gunzip owt_valid.txt.gz
 cd ..
 ```
 
+## Training
+
+### BPE tokenizer training
+
+```sh
+uv run scripts/train_bpe_cli.py --input-path ${INPUT_DATA} --vocab-size ${VOCAB_SIZE} --output-dir ${OUTPUT_DIR}
+```
+INPUT_DATA is the text corpus you want to train the model on. Optionally you can add `--load-pretokenization` to the cmdline above to use any pre-existing text corpus pretokenization result instead of computing from INPUT_DATA from scratch; this saves disk IO time.
+
