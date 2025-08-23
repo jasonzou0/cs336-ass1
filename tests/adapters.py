@@ -12,7 +12,7 @@ from torch import Tensor
 
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
-from cs336_basics.model import LinearModule,EmbeddingModule
+from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule
 
 
 def run_linear(
@@ -34,7 +34,7 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
     m_linear=LinearModule(in_features=d_in, out_features=d_out, device=weights.device, dtype=weights.dtype)
-    m_linear.W.data = weights
+    m_linear.weight.data = weights
     return m_linear(in_features)
 
 
@@ -57,7 +57,7 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
     m_embedding=EmbeddingModule(num_embeddings=vocab_size, embedding_dim=d_model, device=weights.device, dtype=weights.dtype)
-    m_embedding.W.data = weights
+    m_embedding.weight.data = weights
     return m_embedding(token_ids)
 
 
@@ -91,7 +91,13 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+
+    m_swiglu=SwiGLUModule(d_model=d_model, d_ff=d_ff, device=w1_weight.device, dtype=w1_weight.dtype)
+    m_swiglu.weight1.data = w1_weight
+    m_swiglu.weight2.data = w2_weight
+    m_swiglu.weight3.data = w3_weight
+    return m_swiglu(in_features)
+    # raise NotImplementedError
 
 
 def run_scaled_dot_product_attention(
@@ -386,7 +392,10 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    m_rmsnorm=RMSNormModule(d_model=d_model, eps=eps, device=weights.device, dtype=weights.dtype)
+    m_rmsnorm.weight.data = weights
+    return m_rmsnorm(in_features)
+    # raise NotImplementedError
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -400,7 +409,9 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    m_swiglu=SwiGLUModule(d_model=1, d_ff=1, device=in_features.device, dtype=in_features.dtype)
+    return m_swiglu.SiLU(in_features)
+    # raise NotImplementedError
 
 
 def run_get_batch(
