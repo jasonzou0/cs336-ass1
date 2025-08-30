@@ -13,7 +13,7 @@ from einops import einsum
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.module import Linear, Embedding, RmsNorm, silu, SwiGLU
+from cs336_basics.module import Linear, Embedding, RmsNorm, silu, SwiGLU, Rope
 
 
 def run_linear(
@@ -215,7 +215,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = Rope(theta=theta, d_k=d_k, max_seq_len=max_seq_len)
+    return rope(in_query_or_key, token_positions)
 
 
 def run_transformer_block(

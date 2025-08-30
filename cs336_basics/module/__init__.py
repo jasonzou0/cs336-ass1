@@ -3,3 +3,4 @@ from .linear import Linear
 from .norm import RmsNorm
 from .swiglu import SwiGLU
 from .silu import silu
+from .rope import Rope
