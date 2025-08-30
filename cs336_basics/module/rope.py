@@ -65,25 +65,18 @@ class Rope(torch.nn.Module):
         return (x * cos_pos) + (self._transform_input(x) * sin_pos)
 
 
-    def _transform_input(self, x: torch.Tensor) -> torch.Tensor:
+    def _transform_input(self, x: Float[Tensor, "... d_k"],) -> Float[Tensor, "... d_k"]:
         """transform the input tensor by swapping and negating elements; returns a tensor of the same shape as input"""
-        # Get the original shape
-        original_shape = x.shape
-        
-        # Get the size of the last dimension
-        last_dim_size = original_shape[-1]
-        if last_dim_size % 2 != 0:
+        if x.shape[-1] % 2 != 0:
             raise ValueError("The last dimension must have an even number of elements.")
 
-        # Flatten all preceding dimensions into a single batch dimension
-        # and reshape the last dimension into pairs.
-        reshaped_x = x.view(-1, last_dim_size // 2, 2)
+        # Reshape the last dimension into pairs.
+        reshaped_x: Float[Tensor, "... dk_half r"] = rearrange(x, "... (dk_half r) -> ... dk_half r", r=2)
         
         # Extract and reorder the pairs
-        output_pairs = torch.empty_like(reshaped_x)
+        output_pairs: Float[Tensor, "... dk_half r"] = torch.empty_like(reshaped_x)
         output_pairs[..., 0] = -reshaped_x[..., 1]
         output_pairs[..., 1] = reshaped_x[..., 0]
         
-        # Flatten the last two dimensions to get back to the final shape
-        output = output_pairs.view(original_shape)
-        return output
+        # Return output to original shape
+        return rearrange(output_pairs, "... dk_half r -> ... (dk_half r)")
