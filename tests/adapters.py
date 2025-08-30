@@ -13,7 +13,7 @@ from einops import einsum
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.module import Linear, Embedding, RmsNorm, silu, SwiGLU, Rope
+from cs336_basics.module import Linear, Embedding, RmsNorm, silu, SwiGLU, Rope, softmax
 
 
 def run_linear(
@@ -449,7 +449,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    return softmax(in_features, dim=dim)
 
 
 def run_cross_entropy(
