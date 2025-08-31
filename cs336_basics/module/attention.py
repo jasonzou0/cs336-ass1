@@ -23,7 +23,9 @@ def scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    assert K.shape[-2] == V.shape[-2], f"Expected the number of keys in K to be equal to the number of values in V, but got {K.shape[-2]} and {V.shape[-2]}"
+    if not torch.jit.is_scripting() and not torch._dynamo.is_compiling():
+        if K.shape[-2] != V.shape[-2]:
+            raise ValueError(f"Expected the number of keys in K to equal the number of values in V, but got {K.shape} and {V.shape}")
     scaled_qk: Float[Tensor, " ... queries keys"] = \
         einsum(Q, K, " ... queries d_k, ... keys d_k -> ... queries keys") / (Q.shape[-1] ** 0.5)
     if mask is not None:
