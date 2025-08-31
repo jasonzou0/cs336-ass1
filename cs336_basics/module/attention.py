@@ -27,5 +27,5 @@ def scaled_dot_product_attention(
     scaled_qk: Float[Tensor, " ... queries keys"] = \
         einsum(Q, K, " ... queries d_k, ... keys d_k -> ... queries keys") / (Q.shape[-1] ** 0.5)
     if mask is not None:
-        scaled_qk = scaled_qk.masked_fill(~mask, float('-inf'))
+        scaled_qk.masked_fill_(~mask, float('-inf'))
     return einsum(softmax(scaled_qk, dim=-1), V, " ... queries keys, ... keys d_v -> ... queries d_v")
