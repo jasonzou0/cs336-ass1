@@ -38,6 +38,16 @@ def scaled_dot_product_attention(
 
 class CasualMultiheadSelfAttention(torch.nn.Module):
     def __init__(self, d_model: int, num_heads: int, rope_module: torch.nn.Module | None = None, max_seq_len: int=256, device=None, dtype=None):
+        """
+        Implements Casual multihead self-attention with optional RoPE support.
+        Args:
+            d_model: dimension of the model
+            num_heads: number of attention heads
+            rope_module: an instance of the Rope module for applying RoPE, or None to disable RoPE
+            max_seq_len: maximum sequence length supported (for creating the attention mask)
+            device: device to store the model parameters
+            dtype: data type for the model parameters
+        """
         super().__init__()
         self.device = device
         self.d_model = d_model
