@@ -57,10 +57,14 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
         self.attn_mask = torch.tril(torch.ones((max_seq_len, max_seq_len), dtype=torch.bool, device=self.device))
 
     def forward(self, x: Float[Tensor, " ... sequence_length d_model"]) -> Float[Tensor, " ... sequence_length d_model"]:
+        seq_len = x.shape[-2]
+        if not torch.jit.is_scripting() and not torch._dynamo.is_compiling():
+            if seq_len > self.attn_mask.shape[-1]:
+                raise ValueError(f"Input sequence length {seq_len} exceeds max_seq_len {self.attn_mask.shape[-1]}")
+
         Q: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.q_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         K: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.k_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         V: Float[Tensor, " ... h sequence_length dv"] = rearrange(self.v_proj(x), "... sequence_length (h dv) -> ... h sequence_length dv", h=self.num_heads)
-        seq_len = x.shape[-2]
         attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, self.attn_mask[:seq_len, :seq_len])
         return self.o_proj(rearrange(attn_output, "... h sequence_length dv -> ... sequence_length (h dv)"))
 
