@@ -1,7 +1,8 @@
 import torch
 from torch import Tensor
-from einops import einsum
+from einops import einsum, rearrange
 from .softmax import softmax
+from .linear import Linear
 
 from jaxtyping import Float, Bool
 
@@ -21,7 +22,7 @@ def scaled_dot_product_attention(
         V (Float[Tensor, " ... values d_v"]): Values tensor
         mask (Bool[Tensor, " ... queries keys"] | None): Mask tensor
     Returns:
-        Float[Tensor, " ... queries d_v"]: Output of SDPA
+        Float[Tensor, " ... queries d_v"]: Output of attention in the shape of (batch dims), queries (sequence dim), d_v (d_model)
     """
     if not torch.jit.is_scripting() and not torch._dynamo.is_compiling():
         if K.shape[-2] != V.shape[-2]:
@@ -31,3 +32,34 @@ def scaled_dot_product_attention(
     if mask is not None:
         scaled_qk.masked_fill_(~mask, float('-inf'))
     return einsum(softmax(scaled_qk, dim=-1), V, " ... queries keys, ... keys d_v -> ... queries d_v")
+
+
+class CasualMultiheadSelfAttention(torch.nn.Module):
+    def __init__(self, d_model: int, num_heads: int, device=None, dtype=None):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+
+        if d_model % num_heads != 0:
+            raise ValueError(f"d_model must be multiples of num_heads, but got d_model={d_model} and num_heads={num_heads}")
+
+        d_k = d_v = d_model // num_heads
+        # TODO: merge all three input projections into one.
+        self.q_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=device, dtype=dtype)
+        self.k_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=device, dtype=dtype)
+        self.v_proj = Linear(d_in=d_model, d_out=d_v*num_heads, device=device, dtype=dtype)
+        # Output projection
+        self.o_proj = Linear(d_in=d_v*num_heads, d_out=d_model, device=device, dtype=dtype)
+
+        # TODO: create a causal mask buffer using default max_seq_len if one is not set.
+
+
+    def forward(self, x: Float[Tensor, " ... sequence_length d_model"]) -> Float[Tensor, " ... sequence_length d_model"]:
+        Q: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.q_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
+        K: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.k_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
+        V: Float[Tensor, " ... h sequence_length dv"] = rearrange(self.v_proj(x), "... sequence_length (h dv) -> ... h sequence_length dv", h=self.num_heads)
+        attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, mask=None)
+        return self.o_proj(rearrange(attn_output, "... h sequence_length dv -> ... sequence_length (h dv)"))
+
+
+
