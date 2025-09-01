@@ -3,10 +3,10 @@ import torch
 from torch import Tensor
 from einops import einsum, repeat, rearrange
 
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 class Rope(torch.nn.Module):
-    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None, dtype=None):
         """Initialize the RoPE module.
 
         Args:
@@ -20,6 +20,7 @@ class Rope(torch.nn.Module):
         self.d_k = d_k
         self.max_seq_len = max_seq_len
         self.device = device
+        self.dtype = dtype
         assert d_k % 2 == 0, "d_k must be even"
         self._build_cache()
 
@@ -28,13 +29,13 @@ class Rope(torch.nn.Module):
         d_half = self.d_k // 2
         # Create indices for each pair: 1, 1, 2, 2, ..., d_half, d_half
         indices: Float[Tensor, "d_k"] = repeat(
-            torch.arange(1, d_half+1, device=self.device),
+            torch.arange(1, d_half+1, device=self.device, dtype=self.dtype),
             "d_half -> (d_half 2)",
         )
         # The theta_i's from the original paper: 1 / (theta^(2(i-1)/d_k))
         inv_freq: Float[Tensor, "d_k"] = 1.0 / (self.theta ** ((2 * indices -2) / self.d_k))
         # Each row stores the "m * theta_i" for a particular sequence position m
-        m_inv_freq: Float[Tensor, "seq_len d_k"] = rearrange(torch.arange(self.max_seq_len, device=self.device), "seq_len -> seq_len 1") \
+        m_inv_freq: Float[Tensor, "seq_len d_k"] = rearrange(torch.arange(self.max_seq_len, device=self.device, dtype=self.dtype), "seq_len -> seq_len 1") \
             * rearrange(inv_freq, "d_k -> 1 d_k")
         self.register_buffer("cos_cache", torch.cos(m_inv_freq), persistent=False)
         self.register_buffer("sin_cache", torch.sin(m_inv_freq), persistent=False)

@@ -18,7 +18,7 @@ class TransformerBlock(torch.nn.Module):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, theta: float, max_seq_len: int, device=None, dtype=None):
         super().__init__()
 
-        rope = Rope(theta=theta, d_k=d_model // num_heads, max_seq_len=max_seq_len, device=device)
+        rope = Rope(theta=theta, d_k=d_model // num_heads, max_seq_len=max_seq_len, device=device, dtype=dtype)
         self.attn = CasualMultiheadSelfAttention(d_model=d_model, num_heads=num_heads, rope_module=rope, max_seq_len=max_seq_len, device=device, dtype=dtype)
         self.rms1 = RmsNorm(d_model=d_model, device=device, dtype=dtype)
         self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
