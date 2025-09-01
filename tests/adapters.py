@@ -13,7 +13,7 @@ from einops import einsum
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.module import Linear, Embedding, RmsNorm, silu, SwiGLU, Rope, softmax, scaled_dot_product_attention, CasualMultiheadSelfAttention
+from cs336_basics.module import Linear, Embedding, RmsNorm, silu, SwiGLU, Rope, softmax, scaled_dot_product_attention, CasualMultiheadSelfAttention, TransformerBlock
 
 
 def run_linear(
@@ -304,7 +304,19 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer_block = TransformerBlock(d_model=d_model, num_heads=num_heads, d_ff=d_ff, theta=theta, max_seq_len=max_seq_len)
+    transformer_block.load_state_dict({
+        "attn.q_proj.weight": weights["attn.q_proj.weight"],
+        "attn.k_proj.weight": weights["attn.k_proj.weight"],
+        "attn.v_proj.weight": weights["attn.v_proj.weight"],
+        "attn.o_proj.weight": weights["attn.output_proj.weight"],
+        "rms1.gain": weights["ln1.weight"],
+        "ffn.linear_1.weight": weights["ffn.w1.weight"],
+        "ffn.linear_2.weight": weights["ffn.w2.weight"],
+        "ffn.linear_3.weight": weights["ffn.w3.weight"],
+        "rms2.gain": weights["ln2.weight"],
+    })
+    return transformer_block(in_features)
 
 
 def run_transformer_lm(
@@ -410,7 +422,8 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rms_norm = RmsNorm(d_model=d_model, eps=eps)
-    rms_norm.load_state_dict({"gain": weights, "eps": torch.tensor(eps)})
+    rms_norm.load_state_dict({"gain": weights})
+    rms_norm.eps.copy_(torch.tensor(eps))
     return rms_norm(in_features)
 
 

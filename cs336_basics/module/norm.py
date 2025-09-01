@@ -12,7 +12,7 @@ class RmsNorm(torch.nn.Module):
         # This is a learnable "gain" parameter in RMS normalization.
         self.gain: Float[Tensor, "d_model"] = torch.nn.Parameter(torch.ones((d_model,), device=device, dtype=dtype))
         # eps is a non-learnable parameter, so we register it as a buffer
-        self.register_buffer("eps", torch.tensor(eps, device=device, dtype=dtype))
+        self.register_buffer("eps", torch.tensor(eps, device=device, dtype=dtype), persistent=False)
        
 
     def forward(self, x: Float[Tensor, "batch seq d_model"]) -> Float[Tensor, "batch seq d_model"]:
