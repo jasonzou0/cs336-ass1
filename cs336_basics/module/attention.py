@@ -35,7 +35,8 @@ def scaled_dot_product_attention(
 
 
 class CasualMultiheadSelfAttention(torch.nn.Module):
-    def __init__(self, d_model: int, num_heads: int, device=None, dtype=None):
+    # TODO: fix hardcoded max_seq_len value at 12
+    def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 12, device=None, dtype=None):
         super().__init__()
         self.d_model = d_model
         self.num_heads = num_heads
@@ -51,14 +52,13 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
         # Output projection
         self.o_proj = Linear(d_in=d_v*num_heads, d_out=d_model, device=device, dtype=dtype)
 
-        # TODO: create a causal mask buffer using default max_seq_len if one is not set.
-
+        self.register_buffer("attn_mask", torch.tril(torch.ones((max_seq_len, max_seq_len), dtype=torch.bool, device=device)), persistent=False)
 
     def forward(self, x: Float[Tensor, " ... sequence_length d_model"]) -> Float[Tensor, " ... sequence_length d_model"]:
         Q: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.q_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         K: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.k_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         V: Float[Tensor, " ... h sequence_length dv"] = rearrange(self.v_proj(x), "... sequence_length (h dv) -> ... h sequence_length dv", h=self.num_heads)
-        attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, mask=None)
+        attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, mask=self.attn_mask)
         return self.o_proj(rearrange(attn_output, "... h sequence_length dv -> ... sequence_length (h dv)"))
 
 
