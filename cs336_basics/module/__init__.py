@@ -7,3 +7,4 @@ from .rope import Rope
 from .softmax import softmax
 from .attention import scaled_dot_product_attention, CasualMultiheadSelfAttention
 from .transformer import TransformerBlock, Transformer
+from .loss import cross_entropy_loss
