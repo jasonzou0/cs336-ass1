@@ -42,13 +42,14 @@ class Rope(torch.nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "... seq_len d_k"],
-        token_positions: Float[Tensor, "... seq_len"],
+        token_positions: Float[Tensor, "... seq_len"] | None = None,
     ) -> Float[Tensor, "... seq_len d_k"]:
         """Apply RoPE to the input tensor x.
 
         Args:
             x: input tensor of shape (..., seq_len, d_k)
-            token_positions: tensor of shape (..., seq_len) indicating the position of each token in the sequence
+            token_positions: tensor of shape (..., seq_len) indicating the position of each token in the sequence.
+                If None, assumes positions are [0, 1, 2, ..., seq_len-1] for each sequence in the batch.
         Returns:
             Tensor of same shape as x with RoPE applied
         """
@@ -57,8 +58,8 @@ class Rope(torch.nn.Module):
         assert seq_len <= self.max_seq_len, f"Sequence length {seq_len} exceeds max_seq_len {self.max_seq_len}"
 
         # Get the cos and sin values for the given token positions
-        cos_pos: Float[Tensor, "... seq_len d_k"] = self.cos_cache[token_positions]
-        sin_pos: Float[Tensor, "... seq_len d_k"] = self.sin_cache[token_positions]
+        cos_pos: Float[Tensor, "... seq_len d_k"] = self.cos_cache[token_positions] if token_positions is not None else self.cos_cache[:seq_len]
+        sin_pos: Float[Tensor, "... seq_len d_k"] = self.sin_cache[token_positions] if token_positions is not None else self.sin_cache[:seq_len]
         
         # Using the "Computational efficient realization of rotary matrix multiplication" idea 
         # from the original RoPE paper: https://arxiv.org/pdf/2104.09864

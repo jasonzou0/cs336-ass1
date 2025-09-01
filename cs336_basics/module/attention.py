@@ -78,8 +78,6 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
         Q: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.q_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         K: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.k_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         if self.rope_module is not None:
-            if token_positions is None:
-                raise ValueError("token_positions must be provided when using RoPE")
             Q = self.rope_module(Q, token_positions)
             K = self.rope_module(K, token_positions)
         V: Float[Tensor, " ... h sequence_length dv"] = rearrange(self.v_proj(x), "... sequence_length (h dv) -> ... h sequence_length dv", h=self.num_heads)
