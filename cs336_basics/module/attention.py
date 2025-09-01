@@ -37,12 +37,12 @@ def scaled_dot_product_attention(
 
 
 class CasualMultiheadSelfAttention(torch.nn.Module):
-    # TODO: add max_seq_len and rope support
-    def __init__(self, d_model: int, num_heads: int, max_seq_len: int=256, device=None, dtype=None):
+    def __init__(self, d_model: int, num_heads: int, rope_module: torch.nn.Module | None = None, max_seq_len: int=256, device=None, dtype=None):
         super().__init__()
         self.device = device
         self.d_model = d_model
         self.num_heads = num_heads
+        self.rope_module = rope_module
 
         if d_model % num_heads != 0:
             raise ValueError(f"d_model must be multiples of num_heads, but got d_model={d_model} and num_heads={num_heads}")
@@ -56,7 +56,10 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
         self.o_proj = Linear(d_in=d_v*num_heads, d_out=d_model, device=self.device, dtype=dtype)
         self.attn_mask = torch.tril(torch.ones((max_seq_len, max_seq_len), dtype=torch.bool, device=self.device))
 
-    def forward(self, x: Float[Tensor, " ... sequence_length d_model"]) -> Float[Tensor, " ... sequence_length d_model"]:
+    def forward(self, 
+                x: Float[Tensor, " ... sequence_length d_model"],
+                token_positions: Float[Tensor, " ... sequence_length"] | None = None
+        ) -> Float[Tensor, " ... sequence_length d_model"]:
         seq_len = x.shape[-2]
         if not torch.jit.is_scripting() and not torch._dynamo.is_compiling():
             if seq_len > self.attn_mask.shape[-1]:
@@ -64,6 +67,11 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
 
         Q: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.q_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         K: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.k_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
+        if self.rope_module is not None:
+            if token_positions is None:
+                raise ValueError("token_positions must be provided when using RoPE")
+            Q = self.rope_module(Q, token_positions)
+            K = self.rope_module(K, token_positions)
         V: Float[Tensor, " ... h sequence_length dv"] = rearrange(self.v_proj(x), "... sequence_length (h dv) -> ... h sequence_length dv", h=self.num_heads)
         attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, self.attn_mask[:seq_len, :seq_len])
         return self.o_proj(rearrange(attn_output, "... h sequence_length dv -> ... sequence_length (h dv)"))
