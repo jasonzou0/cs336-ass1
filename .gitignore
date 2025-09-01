@@ -161,3 +161,8 @@ cython_debug/
 
 .ruff_cache/
 *.zip
+
+# project specific artifacts that we don't want to version control
+data0/*
+*/pretokenization.pickle
+.DS_Store
