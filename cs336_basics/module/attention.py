@@ -35,9 +35,9 @@ def scaled_dot_product_attention(
 
 
 class CasualMultiheadSelfAttention(torch.nn.Module):
-    # TODO: fix hardcoded max_seq_len value at 12
-    def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 12, device=None, dtype=None):
+    def __init__(self, d_model: int, num_heads: int, device=None, dtype=None):
         super().__init__()
+        self.device = device
         self.d_model = d_model
         self.num_heads = num_heads
 
@@ -46,19 +46,19 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
 
         d_k = d_v = d_model // num_heads
         # TODO: merge all three input projections into one.
-        self.q_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=device, dtype=dtype)
-        self.k_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=device, dtype=dtype)
-        self.v_proj = Linear(d_in=d_model, d_out=d_v*num_heads, device=device, dtype=dtype)
+        self.q_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=self.device, dtype=dtype)
+        self.k_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=self.device, dtype=dtype)
+        self.v_proj = Linear(d_in=d_model, d_out=d_v*num_heads, device=self.device, dtype=dtype)
         # Output projection
-        self.o_proj = Linear(d_in=d_v*num_heads, d_out=d_model, device=device, dtype=dtype)
-
-        self.register_buffer("attn_mask", torch.tril(torch.ones((max_seq_len, max_seq_len), dtype=torch.bool, device=device)), persistent=False)
+        self.o_proj = Linear(d_in=d_v*num_heads, d_out=d_model, device=self.device, dtype=dtype)
 
     def forward(self, x: Float[Tensor, " ... sequence_length d_model"]) -> Float[Tensor, " ... sequence_length d_model"]:
         Q: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.q_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         K: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.k_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         V: Float[Tensor, " ... h sequence_length dv"] = rearrange(self.v_proj(x), "... sequence_length (h dv) -> ... h sequence_length dv", h=self.num_heads)
-        attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, mask=self.attn_mask)
+        seq_len = x.shape[-2]
+        attn_output: Float[Tensor, " ... h sequence_length dv"] = \
+            scaled_dot_product_attention(Q, K, V, mask=torch.tril(torch.ones((seq_len, seq_len), dtype=torch.bool, device=self.device)))
         return self.o_proj(rearrange(attn_output, "... h sequence_length dv -> ... sequence_length (h dv)"))
 
 
