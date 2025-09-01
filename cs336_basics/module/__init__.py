@@ -6,4 +6,4 @@ from .silu import silu
 from .rope import Rope
 from .softmax import softmax
 from .attention import scaled_dot_product_attention, CasualMultiheadSelfAttention
-from .transformer import TransformerBlock
+from .transformer import TransformerBlock, Transformer

@@ -13,7 +13,19 @@ from einops import einsum
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.module import Linear, Embedding, RmsNorm, silu, SwiGLU, Rope, softmax, scaled_dot_product_attention, CasualMultiheadSelfAttention, TransformerBlock
+from cs336_basics.module import (
+    Linear, 
+    Embedding, 
+    RmsNorm, 
+    silu, 
+    SwiGLU, 
+    Rope, 
+    softmax, 
+    scaled_dot_product_attention, 
+    CasualMultiheadSelfAttention, 
+    TransformerBlock,
+    Transformer,
+)
 
 
 def run_linear(
@@ -59,7 +71,7 @@ def run_embedding(
     """
 
     emb_module = Embedding(vocab_size, d_model)
-    emb_module.load_state_dict({"emb": weights})
+    emb_module.load_state_dict({"weight": weights})
     return emb_module(token_ids)
 
 
@@ -398,8 +410,35 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
-
+    transformer = Transformer(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    # You may need to modify the keys of this state dict to match your implementation
+    state_dict = {
+        "token_emb.weight": weights["token_embeddings.weight"],
+        "lm_head.weight": weights["lm_head.weight"],
+        "rms_final.gain": weights["ln_final.weight"],
+    }
+    for layer_idx in range(num_layers):
+        state_dict.update({
+            f"layers.{layer_idx}.attn.q_proj.weight": weights[f"layers.{layer_idx}.attn.q_proj.weight"],
+            f"layers.{layer_idx}.attn.k_proj.weight": weights[f"layers.{layer_idx}.attn.k_proj.weight"],
+            f"layers.{layer_idx}.attn.v_proj.weight": weights[f"layers.{layer_idx}.attn.v_proj.weight"],
+            f"layers.{layer_idx}.attn.o_proj.weight": weights[f"layers.{layer_idx}.attn.output_proj.weight"],
+            f"layers.{layer_idx}.rms1.gain": weights[f"layers.{layer_idx}.ln1.weight"],
+            f"layers.{layer_idx}.ffn.linear_1.weight": weights[f"layers.{layer_idx}.ffn.w1.weight"],
+            f"layers.{layer_idx}.ffn.linear_2.weight": weights[f"layers.{layer_idx}.ffn.w2.weight"],
+            f"layers.{layer_idx}.ffn.linear_3.weight": weights[f"layers.{layer_idx}.ffn.w3.weight"],
+            f"layers.{layer_idx}.rms2.gain": weights[f"layers.{layer_idx}.ln2.weight"],
+        })
+    transformer.load_state_dict(state_dict)
+    return transformer(in_indices)
 
 def run_rmsnorm(
     d_model: int,

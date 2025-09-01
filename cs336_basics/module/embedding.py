@@ -7,10 +7,10 @@ from jaxtyping import Float, Int
 class Embedding(torch.nn.Module):
     def __init__(self, num_embeddings, embedding_dim, device=None, dtype=None):
         super().__init__()
-        self.emb: Float[Tensor, "n_emb emb_dim"] = torch.nn.Parameter(
+        self.weight: Float[Tensor, "n_emb emb_dim"] = torch.nn.Parameter(
             torch.empty((num_embeddings, embedding_dim), device=device, dtype=dtype))
         torch.nn.init.trunc_normal_(
-            self.emb, 
+            self.weight, 
             mean=0.0, 
             std=1.0,
             a=-3.0,
@@ -18,5 +18,4 @@ class Embedding(torch.nn.Module):
         )
 
     def forward(self, token_ids: torch.LongTensor) -> torch.Tensor:
-        # TODO: handle batch dimension in token_ids
-        return self.emb[token_ids]
+        return self.weight[token_ids]
