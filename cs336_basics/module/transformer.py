@@ -6,7 +6,6 @@ from .norm import RmsNorm
 from .rope import Rope
 from .swiglu import SwiGLU
 from .embedding import Embedding
-from .softmax import softmax
 
 from jaxtyping import Float, Int
 
@@ -71,9 +70,9 @@ class Transformer(torch.nn.Module):
             in_indices: Tensor with tokenized indices to run the language model on. Shape is (batch_size, sequence_length), where
             `sequence_length` is at most `context_length`.
         Returns:
-            Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized next-word distribution for each token.
+            Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted *UN-NORMALIZED* next-word distribution for each token.
         """
         x = self.token_emb(in_indices)
         for layer in self.layers:
             x = layer(x)
-        return softmax(self.lm_head(self.rms_final(x)), dim=-1)
+        return self.lm_head(self.rms_final(x))
