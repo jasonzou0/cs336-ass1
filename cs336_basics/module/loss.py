@@ -1,7 +1,6 @@
 import torch
 from torch import Tensor
 
-from einops import rearrange
 from jaxtyping import Float, Int
 
 
@@ -20,5 +19,5 @@ def cross_entropy_loss(inputs: Float[Tensor, " batch_size vocab_size"], targets:
     # The log normalizer log(sum(exp(inputs))) term is common for all classes in a given example / batch
     log_normalizer: Float[Tensor, " batch_size"] = torch.log(torch.sum(torch.exp(inputs), dim=-1))
     # Select the logit corresponding to the target class for each example / batch
-    losses: Float[Tensor, " batch_size"] = log_normalizer - inputs.gather(dim=-1, index=rearrange(targets, " batch_size -> batch_size 1")).squeeze(-1)
+    losses: Float[Tensor, " batch_size"] = log_normalizer - inputs.gather(dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)
     return torch.mean(losses)
