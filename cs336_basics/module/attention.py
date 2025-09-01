@@ -58,7 +58,6 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
             raise ValueError(f"d_model must be multiples of num_heads, but got d_model={d_model} and num_heads={num_heads}")
 
         d_k = d_v = d_model // num_heads
-        # TODO: merge all three input projections into one.
         self.q_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=self.device, dtype=dtype)
         self.k_proj = Linear(d_in=d_model, d_out=d_k*num_heads, device=self.device, dtype=dtype)
         self.v_proj = Linear(d_in=d_model, d_out=d_v*num_heads, device=self.device, dtype=dtype)
@@ -75,6 +74,7 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
             if seq_len > self.attn_mask.shape[-1]:
                 raise ValueError(f"Input sequence length {seq_len} exceeds max_seq_len {self.attn_mask.shape[-1]}")
 
+        # TODO: merge all three input projections into one.
         Q: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.q_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         K: Float[Tensor, " ... h sequence_length dk"] = rearrange(self.k_proj(x), "... sequence_length (h dk) -> ... h sequence_length dk", h=self.num_heads)
         if self.rope_module is not None:
