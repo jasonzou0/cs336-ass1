@@ -37,9 +37,6 @@ def run_linear(
     if weights.device != in_features.device or weights.dtype != in_features.dtype:
         weights = weights.to(device=in_features.device, dtype=in_features.dtype)
 
-    ## need to add normal distribution to init the weights
-    torch.nn.init.normal_(weights, mean=0.0, std=0.02)
-
     # Core: y = x @ W^T (no bias)
     # Works for any leading batch dims "..."
     return in_features @ weights.transpose(0, 1)
@@ -80,9 +77,6 @@ def run_embedding(
 
     # Core: gather rows from the embedding matrix.
     # Two equivalent ways:
-
-    # init with normalization
-    torch.nn.init.normal_(weights, mean=0.0, std=0.02)
 
     # 1) Simple advanced indexing (most readable):
     out = weights[token_ids]                 # shape: [..., d_model]
@@ -164,7 +158,36 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+
+    # Attention(Q, K, V) = softmax( (Q • Kᵀ) / √dₖ ) • V
+    # Get the dimension of the key vectors for scaling
+    # the dimension of the key vectors (dₖ).
+    d_k = Q.shape[-1]
+    
+    # Compute attention scores: Q @ K^T
+    # Shape: (..., queries, keys)
+    # Dot-Product (Q • Kᵀ):
+    scores = Q @ K.transpose(-2, -1)
+    
+    # Scale by sqrt(d_k) to prevent softmax saturation
+    # We divide the scores by the square root of the dimension of the key vectors (dₖ).
+    scores = scores / (d_k ** 0.5)
+    
+    # Apply mask if provided
+    if mask is not None:
+        # Use a large negative value where mask is 0 (or False)
+        # This makes softmax output ~0 for these positions
+        scores = scores.masked_fill(mask == 0, -1e9)
+    
+    # Apply softmax to get attention weights
+    # Shape: (..., queries, keys)
+    attention_weights = torch.softmax(scores, dim=-1)
+    
+    # Apply attention weights to values: A @ V
+    # Shape: (..., queries, d_v)
+    output = attention_weights @ V
+    
+    return output
 
 
 def run_multihead_self_attention(
@@ -197,8 +220,66 @@ def run_multihead_self_attention(
     Returns:
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
+
+多头自注意力 是Transformer的核心。
+
+自注意力 ：模型的查询、键、值都来自自身的上一层输出，让序列内部各个部分相互关联。
+
+多头：并行运行多个独立的注意力机制（头），每个头关注信息的不同方面。
+
+工作原理：
+
+拆分：将输入通过不同的线性变换，为每个头生成独立的Q, K, V。
+
+并行注意力：每个头独立计算注意力，专注于不同类型的模式（如语法、指代、语义）。
+
+合并：将所有头的输出拼接起来。
+
+最终投影：通过一个线性层融合所有头的信息。
+
+为什么强大？
+它像一个专家团队一起分析句子。有的专家专攻指代（解决“它”指代什么），有的专攻语法结构，有的专攻逻辑关系。最后将所有人的见解汇总，得到最全面的理解。这种设计让模型能够同时捕捉多种复杂的语言现象，是其强大能力的根本原因。        
     """
-    raise NotImplementedError
+    # Get dimensions
+    d_k = d_model // num_heads  # dimension per head
+    batch_dims = in_features.shape[:-2]
+    seq_len = in_features.shape[-2]
+    d_in = in_features.shape[-1]
+    
+    # Ensure device & dtype alignment
+    device, dtype = in_features.device, in_features.dtype
+    q_proj_weight = q_proj_weight.to(device=device, dtype=dtype)
+    k_proj_weight = k_proj_weight.to(device=device, dtype=dtype)
+    v_proj_weight = v_proj_weight.to(device=device, dtype=dtype)
+    o_proj_weight = o_proj_weight.to(device=device, dtype=dtype)
+    
+    # Project to Q, K, V using batched matrix multiplication
+    # The weights are concatenated for all heads: shape [d_model, d_model]
+    # Shape: (..., seq_len, d_model)
+    Q = in_features @ q_proj_weight.transpose(-2, -1)
+    K = in_features @ k_proj_weight.transpose(-2, -1)
+    V = in_features @ v_proj_weight.transpose(-2, -1)
+    
+    # Reshape and split into multiple heads
+    # Shape: (..., seq_len, d_model) -> (..., seq_len, num_heads, d_k) -> (..., num_heads, seq_len, d_k)
+    Q = Q.view(*batch_dims, seq_len, num_heads, d_k).transpose(-3, -2)
+    K = K.view(*batch_dims, seq_len, num_heads, d_k).transpose(-3, -2)
+    V = V.view(*batch_dims, seq_len, num_heads, d_k).transpose(-3, -2)
+    
+    # Apply scaled dot-product attention for each head
+    # For language models, we need a causal mask to prevent attending to future tokens
+    # Shape: (..., num_heads, seq_len, d_k)
+    causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=device), diagonal=1).bool()
+    attn_output = run_scaled_dot_product_attention(Q, K, V, mask=~causal_mask)
+    
+    # Concatenate heads: (..., num_heads, seq_len, d_k) -> (..., seq_len, d_model)
+    attn_output = attn_output.transpose(-3, -2).contiguous().view(*batch_dims, seq_len, d_model)
+    
+    # Apply output projection
+    # Shape: (..., seq_len, d_model)
+    output = attn_output @ o_proj_weight.transpose(-2, -1)
+    
+    return output
 
 
 def run_multihead_self_attention_with_rope(
@@ -238,7 +319,70 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    # Get dimensions
+    d_k = d_model // num_heads  # dimension per head
+    batch_dims = in_features.shape[:-2]
+    seq_len = in_features.shape[-2]
+    d_in = in_features.shape[-1]
+    
+    # Ensure device & dtype alignment
+    device, dtype = in_features.device, in_features.dtype
+    q_proj_weight = q_proj_weight.to(device=device, dtype=dtype)
+    k_proj_weight = k_proj_weight.to(device=device, dtype=dtype)
+    v_proj_weight = v_proj_weight.to(device=device, dtype=dtype)
+    o_proj_weight = o_proj_weight.to(device=device, dtype=dtype)
+    
+    # Generate token positions if not provided
+    if token_positions is None:
+        # Default to sequential positions [0, 1, 2, ..., seq_len-1]
+        token_positions = torch.arange(seq_len, device=device, dtype=torch.long)
+        # Expand to match batch dimensions
+        for _ in batch_dims:
+            token_positions = token_positions.unsqueeze(0)
+        token_positions = token_positions.expand(*batch_dims, seq_len)
+    
+    # Project to Q, K, V using batched matrix multiplication
+    # The weights are concatenated for all heads: shape [d_model, d_model]
+    # Shape: (..., seq_len, d_model)
+    Q = in_features @ q_proj_weight.transpose(-2, -1)
+    K = in_features @ k_proj_weight.transpose(-2, -1)
+    V = in_features @ v_proj_weight.transpose(-2, -1)
+    
+    # Reshape and split into multiple heads
+    # Shape: (..., seq_len, d_model) -> (..., seq_len, num_heads, d_k) -> (..., num_heads, seq_len, d_k)
+    Q = Q.view(*batch_dims, seq_len, num_heads, d_k).transpose(-3, -2)
+    K = K.view(*batch_dims, seq_len, num_heads, d_k).transpose(-3, -2)
+    V = V.view(*batch_dims, seq_len, num_heads, d_k).transpose(-3, -2)
+    
+    # Apply RoPE to Q and K (but not V)
+    # We need to apply RoPE to each head separately
+    # Shape after transpose: (..., num_heads, seq_len, d_k)
+    Q_roped = torch.zeros_like(Q)
+    K_roped = torch.zeros_like(K)
+    
+    for h in range(num_heads):
+        # Extract Q and K for this head: (..., seq_len, d_k)
+        Q_h = Q[..., h, :, :]
+        K_h = K[..., h, :, :]
+        
+        # Apply RoPE (d_k is the embedding dimension for each head)
+        Q_roped[..., h, :, :] = run_rope(d_k, theta, max_seq_len, Q_h, token_positions)
+        K_roped[..., h, :, :] = run_rope(d_k, theta, max_seq_len, K_h, token_positions)
+    
+    # Apply scaled dot-product attention for each head with causal mask
+    # For language models, we need a causal mask to prevent attending to future tokens
+    # Shape: (..., num_heads, seq_len, d_k)
+    causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=device), diagonal=1).bool()
+    attn_output = run_scaled_dot_product_attention(Q_roped, K_roped, V, mask=~causal_mask)
+    
+    # Concatenate heads: (..., num_heads, seq_len, d_k) -> (..., seq_len, d_model)
+    attn_output = attn_output.transpose(-3, -2).contiguous().view(*batch_dims, seq_len, d_model)
+    
+    # Apply output projection
+    # Shape: (..., seq_len, d_model)
+    output = attn_output @ o_proj_weight.transpose(-2, -1)
+    
+    return output
 
 
 def run_rope(
@@ -260,7 +404,40 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    device = in_query_or_key.device
+    dtype = in_query_or_key.dtype
+    
+    # Get the shape
+    seq_len = in_query_or_key.shape[-2]
+    
+    # Create frequency for each dimension pair
+    # For dimension i, the frequency is 1 / (theta^(2i/d_k))
+    freqs = 1.0 / (theta ** (torch.arange(0, d_k, 2, device=device, dtype=dtype) / d_k))
+    
+    # Create position encodings
+    # Shape: (seq_len, d_k//2)
+    t = token_positions.to(device=device, dtype=dtype)  # Convert positions to float
+    freqs = t.unsqueeze(-1) * freqs.unsqueeze(-2)  # Broadcasting to get (batch_or_seq, seq_len, d_k//2)
+    
+    # Create cos and sin for rotation
+    cos_freqs = torch.cos(freqs)  # Shape: (..., seq_len, d_k//2)
+    sin_freqs = torch.sin(freqs)  # Shape: (..., seq_len, d_k//2)
+    
+    # Split input into even and odd dimensions
+    # Shape: (..., seq_len, d_k//2)
+    x_even = in_query_or_key[..., 0::2]  # Even indices: 0, 2, 4, ...
+    x_odd = in_query_or_key[..., 1::2]   # Odd indices: 1, 3, 5, ...
+    
+    # Apply rotation: R * [x_even; x_odd] = [cos*x_even - sin*x_odd; sin*x_even + cos*x_odd]
+    rotated_even = cos_freqs * x_even - sin_freqs * x_odd
+    rotated_odd = sin_freqs * x_even + cos_freqs * x_odd
+    
+    # Interleave back to original shape
+    output = torch.zeros_like(in_query_or_key)
+    output[..., 0::2] = rotated_even
+    output[..., 1::2] = rotated_odd
+    
+    return output
 
 
 def run_transformer_block(
