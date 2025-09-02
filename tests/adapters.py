@@ -13,6 +13,7 @@ from einops import einsum
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
+from cs336_basics.optimizer import AdamW
 from cs336_basics.module import (
     Linear, 
     Embedding, 
@@ -554,7 +555,7 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
