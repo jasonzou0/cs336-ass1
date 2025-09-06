@@ -510,7 +510,60 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    # Pre-norm Transformer block:
+    # 1. Apply first RMSNorm
+    # 2. Multi-head self-attention with RoPE
+    # 3. Residual connection
+    # 4. Apply second RMSNorm 
+    # 5. SwiGLU FFN
+    # 6. Residual connection
+    
+    x = in_features
+    
+    # First normalization + attention + residual
+    normed1 = run_rmsnorm(
+        d_model=d_model,
+        eps=1e-5,  # Standard epsilon for RMSNorm
+        weights=weights["ln1.weight"],
+        in_features=x,
+    )
+    
+    attn_out = run_multihead_self_attention_with_rope(
+        d_model=d_model,
+        num_heads=num_heads,
+        max_seq_len=max_seq_len,
+        theta=theta,
+        q_proj_weight=weights["attn.q_proj.weight"],
+        k_proj_weight=weights["attn.k_proj.weight"],
+        v_proj_weight=weights["attn.v_proj.weight"],
+        o_proj_weight=weights["attn.output_proj.weight"],
+        in_features=normed1,
+    )
+    
+    # First residual connection
+    x = x + attn_out
+    
+    # Second normalization + FFN + residual
+    normed2 = run_rmsnorm(
+        d_model=d_model,
+        eps=1e-5,  # Standard epsilon for RMSNorm
+        weights=weights["ln2.weight"],
+        in_features=x,
+    )
+    
+    ffn_out = run_swiglu(
+        d_model=d_model,
+        d_ff=d_ff,
+        w1_weight=weights["ffn.w1.weight"],
+        w2_weight=weights["ffn.w2.weight"],
+        w3_weight=weights["ffn.w3.weight"],
+        in_features=normed2,
+    )
+    
+    # Second residual connection
+    x = x + ffn_out
+    
+    return x
 
 
 def run_transformer_lm(
@@ -615,7 +668,25 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    # RMSNorm formula: x * weights / sqrt(mean(x^2) + eps)
+    # where mean is taken over the last dimension (d_model)
+    
+    # Ensure input and weights are on same device/dtype
+    dev, dt = in_features.device, in_features.dtype
+    w = weights.to(dev, dt)
+    
+    x = in_features
+    
+    # Compute RMS (root mean square) over the last dimension
+    x_squared = x * x  # Element-wise square
+    mean_squared = torch.mean(x_squared, dim=-1, keepdim=True)  # Mean over d_model dimension
+    rms = torch.sqrt(mean_squared + eps)  # Root mean square with epsilon
+    
+    # Normalize and scale
+    normalized = x / rms
+    scaled = normalized * w  # Broadcast weights across all dimensions
+    
+    return scaled
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
