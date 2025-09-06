@@ -739,6 +739,25 @@ def train_bpe(
     return inverted_vocab, merges
 
 
+def load_bpe(
+        vocab_path: str | os.PathLike,
+        merges_path: str | os.PathLike
+    ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    """
+    Load BPE vocabulary and merges from pickled files.
+    Args:
+        vocab_path: Path to the pickled vocabulary file (vocab.pkl)
+        merges_path: Path to the pickled merges file (merges.pkl)
+    Returns:
+        Tuple of (vocab, merges)
+    """
+    with open(vocab_path, "rb") as f:
+        vocab: dict[int, bytes] = pickle.load(f)
+    with open(merges_path, "rb") as f:
+        merges: list[tuple[bytes, bytes]] = pickle.load(f)
+    return vocab, merges
+
+
 def save_bpe(
     vocab: dict[int, bytes], 
     merges: list[tuple[bytes, bytes]], 

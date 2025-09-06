@@ -110,10 +110,28 @@ class Tokenizer(object):
         # Flatten the list of lists into a single list
         return [item for sublist in encoding_per_pretoken for item in sublist]
 
-    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+    def encode_iterable(self, iterable: Iterable[str], progress_interval: int = None) -> Iterator[int]:
+        """
+        Encode an iterable of text strings.
+        
+        Args:
+            iterable: The input text iterable (e.g., file lines)
+            progress_interval: If set, print progress every N lines processed
+        
+        Yields:
+            Token IDs as integers
+        """
+        lines_processed = 0
+        
         for text in iterable:
+            lines_processed += 1
+            
             for encoded_id in self.encode(text):
                 yield encoded_id
+            
+            # Print progress every N lines if interval is set
+            if progress_interval is not None and lines_processed % progress_interval == 0:
+                print(f"Processed {lines_processed:,} lines")
 
     def decode(self, ids: list[int]) -> str:
         return b''.join([self._id_to_vocab[id] for id in ids]).decode("utf-8", errors="replace")
