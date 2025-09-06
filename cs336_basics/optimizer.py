@@ -55,7 +55,8 @@ class AdamW(torch.optim.Optimizer):
             "eps": eps,
         }
         super().__init__(params, defaults)
-        
+    
+    @torch.no_grad()
     def step(self, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
 
@@ -64,6 +65,8 @@ class AdamW(torch.optim.Optimizer):
             beta1, beta2 = group["betas"]
             weight_decay = group["weight_decay"]
             eps = group["eps"]
+
+            lr_m_weight_decay = lr * weight_decay
 
             for p in group["params"]:
                 if p.grad is None:
@@ -75,14 +78,14 @@ class AdamW(torch.optim.Optimizer):
                 m = state.get("m", torch.zeros_like(p.data))
                 v = state.get("v", torch.zeros_like(p.data))
                 # Update moments and store back into parameter state.
-                m = beta1 * m + (1 - beta1) * p.grad.data
-                v = beta2 * v + (1 - beta2) * (p.grad.data ** 2)
+                m.mul_(beta1).add_(p.grad, alpha=1 - beta1)
+                v.mul_(beta2).addcmul_(p.grad, p.grad, value=1 - beta2)
                 state["m"] = m 
                 state["v"] = v
                 alpha = lr * (math.sqrt(1 - beta2 ** t) / (1 - beta1 ** t))
-                p.data -= alpha * m / (torch.sqrt(v) + eps)
-                p.data -= lr * weight_decay * p.data
-
+                # Perform parameter update.                
+                p.addcdiv_(m, torch.sqrt(v).add_(eps), value=-alpha)
+                p.sub_(p, alpha=lr_m_weight_decay)
                 # Update step in parameter state.
                 state["t"] = t + 1
 
