@@ -8,13 +8,13 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
-from einops import einsum
 
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
 from cs336_basics.grad_clipping import grad_clipping
+from cs336_basics.data_loader import sample_batch
 from cs336_basics.module import (
     Linear, 
     Embedding, 
@@ -503,7 +503,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return sample_batch(dataset, batch_size, context_length, device, random_seed=None)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:

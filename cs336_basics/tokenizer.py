@@ -63,8 +63,11 @@ class Tokenizer(object):
         """
         Encodes a single token into its corresponding ID using the vocabulary.
         
+        It iteratively merges byte pairs based on the merges list in the original merge discovery order,
+        until no more merges can be applied.
+        
         Args:
-            token: A tuple representing the token to encode.
+            token: A per-byte tuple representing the token to encode.
         Returns:
             The ID of the token in the vocabulary.
         """
