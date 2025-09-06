@@ -14,6 +14,7 @@ from einops import einsum
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
+from cs336_basics.grad_clipping import grad_clipping
 from cs336_basics.module import (
     Linear, 
     Embedding, 
@@ -548,7 +549,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    grad_clipping(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
