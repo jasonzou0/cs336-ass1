@@ -136,6 +136,9 @@ def main():
             
             # Checkpoint saving - capture position after processing this line
             if total_lines % args.checkpoint_interval == 0:
+                elapsed_time = time.time() - start_time
+                throughput_mb_per_sec = (session_bytes_processed / elapsed_time) / (1024 * 1024) if elapsed_time > 0 else 0
+                print(f"Tokenization throughput: {throughput_mb_per_sec:.2f} MB/s")
                 current_position = f.tell()  # Get position after reading this line
                 save_checkpoint(checkpoint_path, token_list, total_lines, current_position)
     
@@ -153,15 +156,10 @@ def main():
     print(f"Saving {len(tokens_array)} tokens to {tokens_path}")
     np.save(tokens_path, tokens_array)
     
-    # Clean up checkpoint file on successful completion
-    if checkpoint_path.exists():
-        checkpoint_path.unlink()
-        print("Removed checkpoint file (tokenization completed)")
-    
     total_lines_processed = lines_processed + current_lines
     print(f"Successfully tokenized {total_lines_processed:,} lines into {len(tokens_array):,} tokens")
     print(f"Session processed {session_bytes_processed:,} bytes in {elapsed_time:.2f} seconds")
-    print(f"Throughput: {throughput_mb_per_sec:.2f} MB/s ({throughput_bytes_per_sec:,.0f} bytes/s)")
+    print(f"Total throughput: {throughput_mb_per_sec:.2f} MB/s ({throughput_bytes_per_sec:,.0f} bytes/s)")
     print(f"Saved to {tokens_path}")
 
 
