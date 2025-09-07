@@ -62,6 +62,8 @@ def main():
                         help="Save checkpoint every N lines (default: 10000000)")
     parser.add_argument("--resume_checkpoint", action="store_true",
                         help="Resume from existing checkpoint if available")
+    parser.add_argument("--cache_size", type=int, default=16384,
+                        help="LRU cache size for tokenization (default: 16384, use 0 to disable)")
     
     args = parser.parse_args()
     
@@ -79,8 +81,10 @@ def main():
     print(f"Loading BPE from {vocab_file} and {merges_file}")
     vocab, merges = load_bpe(vocab_file, merges_file)
     
-    # Create tokenizer instance with progress tracking
-    tokenizer = Tokenizer(vocab, merges, special_tokens=[], progress_interval=args.progress_interval)
+    # Create tokenizer instance with progress tracking and cache configuration
+    tokenizer = Tokenizer(vocab, merges, special_tokens=[], 
+                         progress_interval=args.progress_interval, 
+                         cache_size=args.cache_size)
     
     # Get file size for display
     file_size_bytes = Path(args.input_text).stat().st_size

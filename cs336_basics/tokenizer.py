@@ -31,18 +31,24 @@ class Tokenizer(object):
         self._progress_interval = kwargs.get("progress_interval", None)
         self._encode_call_count = 0
         
+        # Cache configuration
+        cache_size = kwargs.get("cache_size", 16384)
+        
         # Create a cached version of the encoding function
         # 
         # Cache size analysis result from owt_valid_100k.txt:
         #
-        #    | Cache Size | Time (s) | Hit Rate | Speed Gain | Memory Est |
-        #    |------------|----------|----------|------------|------------|
-        #    | 128        | 0.71     | 51.0%    | 1.0x       | 6KB        |
-        #    | 512        | 0.61     | 65.8%    | 1.16x      | 25KB       |
-        #    | 2048       | 0.50     | 76.3%    | 1.42x      | 100KB      |
-        #    | 8192       | 0.40     | 86.2%    | 1.78x      | 400KB      |
-        #    | 16384      | 0.36     | 89.4%    | 1.97x      | 800KB      |
-        self._encode_cache = lru_cache(maxsize=16384)(self._encode_one_tuple_uncached)
+        #    | Cache Size | Time (s) | Throughput (MB/s) | Speed Gain | Memory Est |
+        #    |------------|----------|-------------------|------------|------------|
+        #    | 0          | 1.90     | 6.30              | 1.00x      | 0KB        |
+        #    | 128        | 1.77     | 6.76              | 1.07x      | 6KB        |
+        #    | 2048       | 1.64     | 7.29              | 1.16x      | 100KB      |
+        #    | 16384      | 1.58     | 7.57              | 1.20x      | 800KB      |
+        #    | 32768      | 1.55     | 7.73              | 1.23x      | 1.6MB      |
+        if cache_size > 0:
+            self._encode_cache = lru_cache(maxsize=cache_size)(self._encode_one_tuple_uncached)
+        else:
+            self._encode_cache = self._encode_one_tuple_uncached  # No caching
 
     def _pretokenize(self, text: str) -> list[bytes]:
         """

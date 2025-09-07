@@ -164,5 +164,6 @@ cython_debug/
 
 # project specific artifacts that we don't want to version control
 data0/*
+notebooks/*
 */pretokenization.pickle
 .DS_Store
