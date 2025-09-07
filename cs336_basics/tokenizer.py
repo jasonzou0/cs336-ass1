@@ -1,5 +1,6 @@
 import pickle
 import regex as re
+from functools import lru_cache
 
 from typing import Iterable, Iterator
 from .train_bpe import get_pretokenizer
@@ -21,6 +22,9 @@ class Tokenizer(object):
         pretokenizer_name = kwargs.get("pretokenizer_name", "default")
         self._pretokenizer = get_pretokenizer(pretokenizer_name)
         self._debug = kwargs.get("debug", False)
+        
+        # Create a cached version of the encoding function
+        self._encode_cache = lru_cache(maxsize=8192)(self._encode_one_tuple_uncached)
 
     def _pretokenize(self, text: str) -> list[tuple]:
         """
@@ -58,8 +62,13 @@ class Tokenizer(object):
 
         return result
 
-    # TODO: consider caching the result of this api call for frequent tokens.
     def _encode_one_tuple(self, bytes_tuple: tuple) -> list[int]:
+        """
+        Cached wrapper for encoding a single tuple. Uses LRU cache for performance.
+        """
+        return self._encode_cache(bytes_tuple)
+    
+    def _encode_one_tuple_uncached(self, bytes_tuple: tuple) -> list[int]:
         """
         Encodes a single token into its corresponding ID using the vocabulary.
         
@@ -67,35 +76,40 @@ class Tokenizer(object):
         until no more merges can be applied.
         
         Args:
-            token: A per-byte tuple representing the token to encode.
+            bytes_tuple: A per-byte tuple representing the token to encode.
         Returns:
-            The ID of the token in the vocabulary.
+            List of token IDs in the vocabulary.
         """
-        while len(bytes_tuple) > 1:
-            merge_found = False
-            # saves the position to merge, its merge index, and the merged token
-            best_merge: tuple[int, int, bytes] = (-1, float('inf'), bytes())
-            for i in range(len(bytes_tuple) - 1):
-                pair = (bytes_tuple[i], bytes_tuple[i + 1])
-                # TODO: decide if we need to consider positions of merges and only apply the first merge found.
+        # Use list for efficiency during merging operations
+        tokens = list(bytes_tuple)
+        
+        while len(tokens) > 1:
+            # Find the best merge (earliest in merge order) in single pass
+            best_merge_idx = float('inf')
+            best_pos = -1
+            
+            for i in range(len(tokens) - 1):
+                pair = (tokens[i], tokens[i + 1])
                 if pair in self._merges:
-                    merged_token: bytes = pair[0] + pair[1]
-                    merge_found = True
-                    merge_index = self._merges[pair]
-                    # Check if this merge is better than the best found so far
-                    if merge_index < best_merge[1]:
-                        best_merge = (i, merge_index, merged_token)
-            if merge_found:
-                i, _, merged_token = best_merge
-                if self._debug:
-                    print(f"Merging {bytes_tuple[i]} and {bytes_tuple[i + 1]} at index {i} into {merged_token}")
-                bytes_tuple = bytes_tuple[:i] + (merged_token,) + bytes_tuple[i + 2:]
-            else:
-                if self._debug:
-                    print(f"No more merges found for {bytes_tuple}, breaking.")
+                    merge_idx = self._merges[pair]
+                    if merge_idx < best_merge_idx:
+                        best_merge_idx = merge_idx
+                        best_pos = i
+            
+            if best_pos == -1:
+                # No more merges possible
                 break
-        # Convert the final bytes tuple to IDs
-        return [self._vocab[byte] for byte in bytes_tuple]
+                
+            # Perform the merge
+            merged_token = tokens[best_pos] + tokens[best_pos + 1]
+            if self._debug:
+                print(f"Merging {tokens[best_pos]} and {tokens[best_pos + 1]} at index {best_pos} into {merged_token}")
+            
+            # Replace the two tokens with the merged token
+            tokens = tokens[:best_pos] + [merged_token] + tokens[best_pos + 2:]
+        
+        # Convert the final tokens to IDs
+        return [self._vocab[token] for token in tokens]
 
     def from_file(cls, vocab_file, merges_file, special_tokens=None):
         # open and unpickle vocab and merges files
