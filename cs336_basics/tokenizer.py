@@ -24,7 +24,17 @@ class Tokenizer(object):
         self._debug = kwargs.get("debug", False)
         
         # Create a cached version of the encoding function
-        self._encode_cache = lru_cache(maxsize=8192)(self._encode_one_tuple_uncached)
+        # 
+        # Cache size analysis result from owt_valid_100k.txt:
+        #
+        #    | Cache Size | Time (s) | Hit Rate | Speed Gain | Memory Est |
+        #    |------------|----------|----------|------------|------------|
+        #    | 128        | 0.71     | 51.0%    | 1.0x       | 6KB        |
+        #    | 512        | 0.61     | 65.8%    | 1.16x      | 25KB       |
+        #    | 2048       | 0.50     | 76.3%    | 1.42x      | 100KB      |
+        #    | 8192       | 0.40     | 86.2%    | 1.78x      | 400KB      |
+        #    | 16384      | 0.36     | 89.4%    | 1.97x      | 800KB      |
+        self._encode_cache = lru_cache(maxsize=16384)(self._encode_one_tuple_uncached)
 
     def _pretokenize(self, text: str) -> list[tuple]:
         """
