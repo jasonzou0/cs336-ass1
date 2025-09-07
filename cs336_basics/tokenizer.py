@@ -5,6 +5,10 @@ from functools import lru_cache
 from typing import Iterable, Iterator
 from .train_bpe import get_pretokenizer
 
+# Note: if we want to parallelize tokenization in the future, pay attention to:
+# 1. the file chunking algorithm should only chunk at word / line boundaries and 
+#    does not split the "<|endoftext|>" special token.
+# 2. might need to reduce the size of the cache per process to save memory.
 class Tokenizer(object):
     def __init__(
         self, 
@@ -40,17 +44,17 @@ class Tokenizer(object):
         #    | 16384      | 0.36     | 89.4%    | 1.97x      | 800KB      |
         self._encode_cache = lru_cache(maxsize=16384)(self._encode_one_tuple_uncached)
 
-    def _pretokenize(self, text: str) -> list[tuple]:
+    def _pretokenize(self, text: str) -> list[bytes]:
         """
-        Pre-tokenizes the input text into byte tuples based on special tokens and pretokenizer.
+        Pre-tokenizes the input text into bytes based on special tokens and pretokenizer.
         
         Args:
             text: The input text to pre-tokenize.
         Returns:
-            A list of tuples, where each tuple contains the per-byte representation of a pretokenized token
+            A list of bytes, where each bytes object represents a pretokenized token
             in the original order they appear in the text.
         """
-        result: list[tuple] = []
+        result: list[bytes] = []
 
         # Use capturing group in split to keep special tokens in the result
         # Sort special tokens by length (descending) to match longest first for overlapping cases
@@ -64,27 +68,23 @@ class Tokenizer(object):
             if not chunk:  # Skip empty chunks
                 continue
             elif chunk in self._special_tokens:
-                # Special token: add as single tuple with its bytes representation
-                byte_tuple = (chunk.encode("utf-8"),)
-                result.append(byte_tuple)
+                # Special token: add as bytes representation
+                result.append(chunk.encode("utf-8"))
             else:
                 # Regular text: process with pretokenizer
                 for match in self._pretokenizer.finditer(chunk):
                     token = match.group()
-                    # Optimized: Create byte objects more efficiently
-                    encoded_bytes = token.encode("utf-8")
-                    byte_tuple = tuple(encoded_bytes[i:i+1] for i in range(len(encoded_bytes)))
-                    result.append(byte_tuple)
+                    result.append(token.encode("utf-8"))
 
         return result
 
-    def _encode_one_tuple(self, bytes_tuple: tuple) -> list[int]:
+    def _encode_one_tuple(self, token_bytes: bytes) -> list[int]:
         """
-        Cached wrapper for encoding a single tuple. Uses LRU cache for performance.
+        Cached wrapper for encoding a single bytes token. Uses LRU cache for performance.
         """
-        return self._encode_cache(bytes_tuple)
+        return self._encode_cache(token_bytes)
     
-    def _encode_one_tuple_uncached(self, bytes_tuple: tuple) -> list[int]:
+    def _encode_one_tuple_uncached(self, token_bytes: bytes) -> list[int]:
         """
         Encodes a single token into its corresponding ID using the vocabulary.
         
@@ -92,12 +92,16 @@ class Tokenizer(object):
         until no more merges can be applied.
         
         Args:
-            bytes_tuple: A per-byte tuple representing the token to encode.
+            token_bytes: Bytes representing the token to encode.
         Returns:
             List of token IDs in the vocabulary.
         """
-        # Use list for efficiency during merging operations
-        tokens = list(bytes_tuple)
+        # Check if the token already exists in vocab as a complete token (e.g., special tokens)
+        if token_bytes in self._vocab:
+            return [self._vocab[token_bytes]]
+            
+        # Break up token_bytes into list of single-byte tokens for merging.
+        tokens: list[bytes] = list(token_bytes[i:i+1] for i in range(len(token_bytes)))
         
         while len(tokens) > 1:
             # Find the best merge (earliest in merge order) in single pass
