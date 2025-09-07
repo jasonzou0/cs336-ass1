@@ -23,6 +23,10 @@ class Tokenizer(object):
         self._pretokenizer = get_pretokenizer(pretokenizer_name)
         self._debug = kwargs.get("debug", False)
         
+        # Progress tracking
+        self._progress_interval = kwargs.get("progress_interval", None)
+        self._encode_call_count = 0
+        
         # Create a cached version of the encoding function
         # 
         # Cache size analysis result from owt_valid_100k.txt:
@@ -67,7 +71,9 @@ class Tokenizer(object):
                 # Regular text: process with pretokenizer
                 for match in self._pretokenizer.finditer(chunk):
                     token = match.group()
-                    byte_tuple = tuple(bytes([b]) for b in token.encode("utf-8"))
+                    # Optimized: Create byte objects more efficiently
+                    encoded_bytes = token.encode("utf-8")
+                    byte_tuple = tuple(encoded_bytes[i:i+1] for i in range(len(encoded_bytes)))
                     result.append(byte_tuple)
 
         return result
@@ -115,8 +121,9 @@ class Tokenizer(object):
             if self._debug:
                 print(f"Merging {tokens[best_pos]} and {tokens[best_pos + 1]} at index {best_pos} into {merged_token}")
             
-            # Replace the two tokens with the merged token
-            tokens = tokens[:best_pos] + [merged_token] + tokens[best_pos + 2:]
+            # Optimized: Use in-place modification instead of list concatenation
+            tokens[best_pos] = merged_token
+            del tokens[best_pos + 1]
         
         # Convert the final tokens to IDs
         return [self._vocab[token] for token in tokens]
@@ -130,32 +137,31 @@ class Tokenizer(object):
         return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
+        # Increment call count for progress tracking
+        self._encode_call_count += 1
+        
+        # Progress reporting if enabled
+        if (self._progress_interval is not None and 
+            self._encode_call_count % self._progress_interval == 0):
+            print(f"Encoded {self._encode_call_count:,} lines")
+        
         encoding_per_pretoken = (self._encode_one_tuple(pretoken) for pretoken in self._pretokenize(text))
         # Flatten the list of lists into a single list
         return [item for sublist in encoding_per_pretoken for item in sublist]
 
-    def encode_iterable(self, iterable: Iterable[str], progress_interval: int = None) -> Iterator[int]:
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         """
         Encode an iterable of text strings.
         
         Args:
             iterable: The input text iterable (e.g., file lines)
-            progress_interval: If set, print progress every N lines processed
         
         Yields:
             Token IDs as integers
         """
-        lines_processed = 0
-        
         for text in iterable:
-            lines_processed += 1
-            
             for encoded_id in self.encode(text):
                 yield encoded_id
-            
-            # Print progress every N lines if interval is set
-            if progress_interval is not None and lines_processed % progress_interval == 0:
-                print(f"Processed {lines_processed:,} lines")
 
     def decode(self, ids: list[int]) -> str:
         return b''.join([self._id_to_vocab[id] for id in ids]).decode("utf-8", errors="replace")
