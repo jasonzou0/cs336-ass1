@@ -64,6 +64,8 @@ def main():
                         help="Resume from existing checkpoint if available")
     parser.add_argument("--cache_size", type=int, default=16384,
                         help="LRU cache size for tokenization (default: 16384, use 0 to disable)")
+    parser.add_argument("--no_cython", action="store_true",
+                        help="Disable Cython optimization, use Python implementation")
     
     args = parser.parse_args()
     
@@ -81,10 +83,18 @@ def main():
     print(f"Loading BPE from {vocab_file} and {merges_file}")
     vocab, merges = load_bpe(vocab_file, merges_file)
     
+    # Determine Cython usage (default is to use it if available, unless explicitly disabled)
+    # Don't pass use_cython unless explicitly set by user, let tokenizer decide
+    tokenizer_kwargs = {
+        'progress_interval': args.progress_interval,
+        'cache_size': args.cache_size,
+    }
+
+    if args.no_cython:
+        tokenizer_kwargs['use_cython'] = False
+
     # Create tokenizer instance with progress tracking and cache configuration
-    tokenizer = Tokenizer(vocab, merges, special_tokens=[], 
-                         progress_interval=args.progress_interval, 
-                         cache_size=args.cache_size)
+    tokenizer = Tokenizer(vocab, merges, special_tokens=[], **tokenizer_kwargs)
     
     # Get file size for display
     file_size_bytes = Path(args.input_text).stat().st_size

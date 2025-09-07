@@ -5,6 +5,14 @@ from functools import lru_cache
 from typing import Iterable, Iterator
 from .train_bpe import get_pretokenizer
 
+# Try to import Cython optimized functions
+try:
+    from .tokenizer_cy import encode_one_tuple_uncached_cy
+    CYTHON_AVAILABLE = True
+except ImportError:
+    CYTHON_AVAILABLE = False
+    encode_one_tuple_uncached_cy = None
+
 # Note: if we want to parallelize tokenization in the future, pay attention to:
 # 1. the file chunking algorithm should only chunk at word / line boundaries and 
 #    does not split the "<|endoftext|>" special token.
@@ -34,6 +42,19 @@ class Tokenizer(object):
         # Cache configuration
         cache_size = kwargs.get("cache_size", 16384)
         
+        # Cython optimization configuration
+        use_cython = kwargs.get("use_cython", True)  # Default to True
+
+        if use_cython and not CYTHON_AVAILABLE:
+            raise RuntimeError("Cython optimization requested but not available. Please build the Cython extension first.")
+
+        self._use_cython = use_cython and CYTHON_AVAILABLE
+
+        if self._use_cython:
+            print("Using Cython optimized tokenization")
+        else:
+            print("Using Python tokenization")
+
         # Create a cached version of the encoding function
         # 
         # Cache size analysis result from owt_valid_100k.txt:
@@ -102,6 +123,11 @@ class Tokenizer(object):
         Returns:
             List of token IDs in the vocabulary.
         """
+        # Use Cython optimized version if available
+        if self._use_cython:
+            return encode_one_tuple_uncached_cy(token_bytes, self._vocab, self._merges)
+
+        # Fallback to Python implementation
         # Check if the token already exists in vocab as a complete token (e.g., special tokens)
         if token_bytes in self._vocab:
             return [self._vocab[token_bytes]]
