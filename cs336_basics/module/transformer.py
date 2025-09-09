@@ -8,6 +8,7 @@ from .swiglu import SwiGLU
 from .embedding import Embedding
 
 from jaxtyping import Float, Int
+from dataclasses import dataclass
 
 class TransformerBlock(torch.nn.Module):
     """A single Transformer block consisting of a multi-head self-attention layer
@@ -39,9 +40,48 @@ class TransformerBlock(torch.nn.Module):
         x += self.ffn(self.rms2(x))
         return x
 
+@dataclass
+class TransformerConfig:
+    vocab_size: int = 10000
+    context_length: int = 256
+    d_model: int = 512
+    d_ff: int = None
+    rope_theta: float = 10000.0
+    num_layers: int = 4
+    num_heads: int = 16
+
+    def __post_init__(self):
+        if self.d_ff is None:
+            self.d_ff = int(8 * self.d_model / 3)
+
 
 class Transformer(torch.nn.Module):
     """A decoder-only Transformer using RoPE and SwiGLU activations."""
+    
+    @staticmethod
+    def create_from_config(config: TransformerConfig, device=None, dtype=torch.float32):
+        """Create a Transformer instance from a TransformerConfig.
+        
+        Args:
+            config: TransformerConfig instance containing model parameters
+            device: device to store the model parameters
+            dtype: data type for the model parameters (default: torch.float32)
+        
+        Returns:
+            Transformer: A new Transformer instance
+        """
+        return Transformer(
+            vocab_size=config.vocab_size,
+            context_length=config.context_length,
+            d_model=config.d_model,
+            num_layers=config.num_layers,
+            num_heads=config.num_heads,
+            d_ff=config.d_ff,
+            rope_theta=config.rope_theta,
+            device=device,
+            dtype=dtype
+        )
+    
     def __init__(
         self, vocab_size: int, context_length: int, d_model: int, num_layers: int, num_heads: int, d_ff: int, rope_theta: float, device=None, dtype=None):
         """Create a Transformer model using RoPE and SwiGLU.

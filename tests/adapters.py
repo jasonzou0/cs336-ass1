@@ -12,7 +12,7 @@ from torch import Tensor
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
+from cs336_basics.optimizer import AdamW, CosineScheduler
 from cs336_basics.grad_clipping import grad_clipping
 from cs336_basics.data_loader import sample_batch
 from cs336_basics.checkpoint import save_checkpoint, load_checkpoint
@@ -585,13 +585,13 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    return get_lr_cosine_schedule(
-        it=it,
-        max_learning_rate=max_learning_rate,
+    optimizer = AdamW(params=Linear(d_in=1, d_out=1).parameters(), lr=max_learning_rate, weight_decay=0.01, betas=(0.9, 0.999), eps=1e-8)
+    return CosineScheduler(
         min_learning_rate=min_learning_rate,
+        optimizer=optimizer,
         warmup_iters=warmup_iters,
         cosine_cycle_iters=cosine_cycle_iters,
-    )
+    ).get_lr_at_iter(it)
 
 
 def run_save_checkpoint(

@@ -1,47 +1,112 @@
 import torch
 import math
 from typing import Optional, Callable
+from dataclasses import dataclass
 
-def get_lr_cosine_schedule(
-    it: int,
-    max_learning_rate: float,
-    min_learning_rate: float,
-    warmup_iters: int,
-    cosine_cycle_iters: int,
-):
-    """
-    Given the parameters of a cosine learning rate decay schedule (with linear
-    warmup) and an iteration number, return the learning rate at the given
-    iteration under the specified schedule.
+
+@dataclass
+class OptimizerConfig:
+    # Number of iterations to linearly warm up the learning rate.
+    warmup_iters: int = 1000
+    # The initial learning rate after warmup.
+    learning_rate: float = 1e-3
+    # The weight decay to apply.
+    weight_decay: float = 0.01
+    # The beta coefficients used for computing running averages of gradient and its square.
+    betas: tuple[float, float] = (0.9, 0.999)
+    # The final learning rate after cosine annealing.
+    min_learning_rate: float = 1e-5
+
+
+def create_from_config(params, config: OptimizerConfig, cosine_cycle_iters: int) -> tuple[torch.optim.Optimizer, "CosineScheduler"]:
+    """Create a coupled AdamW optimizer and CosineScheduler from a configuration.
 
     Args:
-        it (int): Iteration number to get learning rate for.
-        max_learning_rate (float): alpha_max, the maximum learning rate for
-            cosine learning rate schedule (with warmup).
-        min_learning_rate (float): alpha_min, the minimum / final learning rate for
-            the cosine learning rate schedule (with warmup).
-        warmup_iters (int): T_w, the number of iterations to linearly warm-up
-            the learning rate.
-        cosine_cycle_iters (int): T_c, the number of cosine annealing iterations.
+        params: Iterable of model parameters.
+        config (OptimizerConfig): Optimizer hyperparameter configuration.
+        cosine_cycle_iters (int): Total iterations for the warmup + cosine schedule.
 
     Returns:
-        Learning rate at the given iteration under the specified schedule.
+        (optimizer, scheduler): The initialized AdamW optimizer and CosineScheduler.
     """
-    assert cosine_cycle_iters > warmup_iters, "cosine_cycle_iters must be larger than warmup_iters, but got " \
-        f"cosine_cycle_iters={cosine_cycle_iters} and warmup_iters={warmup_iters}"
-    
-    if it < warmup_iters:
-        return max_learning_rate * (it / warmup_iters)
-    elif it > cosine_cycle_iters:
-        return min_learning_rate
-    else:
-        cos_inner = math.pi * (it - warmup_iters) / (cosine_cycle_iters - warmup_iters)
-        return min_learning_rate + 0.5 * (max_learning_rate - min_learning_rate) * (1 + math.cos(cos_inner))
+    optimizer = AdamW(
+        params,
+        lr=config.learning_rate,
+        weight_decay=config.weight_decay,
+        betas=config.betas,
+    )
+    scheduler = CosineScheduler(
+        min_learning_rate=config.min_learning_rate,
+        optimizer=optimizer,
+        warmup_iters=config.warmup_iters,
+        cosine_cycle_iters=cosine_cycle_iters,
+    )
+    return optimizer, scheduler
 
+
+class CosineScheduler:
+    """
+    A cosine learning rate scheduler with linear warmup.
+    """
+    def __init__(
+        self,
+        min_learning_rate: float,
+        optimizer: torch.optim.Optimizer,
+        warmup_iters: int, 
+        cosine_cycle_iters: int,
+    ):
+        """
+        Initialize the cosine scheduler.
+        
+        Args:
+            torch.optim.Optimizer: optimizer to attach the scheduler to. 
+                Its initial learning rate is the learning rate warmup target.
+            min_learning_rate (float): the minimum / final learning rate.
+            warmup_iters (int): the number of iterations to linearly warm-up learning rate to .
+            cosine_cycle_iters (int): the number of cosine annealing iterations.
+            
+        """
+        assert cosine_cycle_iters > warmup_iters, "cosine_cycle_iters must be larger than warmup_iters, but got " \
+            f"cosine_cycle_iters={cosine_cycle_iters} and warmup_iters={warmup_iters}"
+        
+        self.optimizer = optimizer
+        self.max_learning_rate = self.optimizer.param_groups[0]["lr"]
+        self.min_learning_rate = min_learning_rate
+        self.warmup_iters = warmup_iters
+        self.cosine_cycle_iters = cosine_cycle_iters
+        self.step_count = 0
     
+    def step(self):
+        self.step_count += 1
+        for group in self.optimizer.param_groups:
+            group['lr'] = self.get_lr_at_iter(self.step_count)
+
+    def get_lr_at_iter(self, it: int) -> float:
+        """
+        Get the learning rate for the given iteration.
+        
+        Args:
+            it (int): Iteration number to get learning rate for.
+            
+        Returns:
+            Learning rate at the given iteration under the specified schedule.
+        """
+        if it < self.warmup_iters:
+            return self.max_learning_rate * (it / self.warmup_iters)
+        elif it > self.cosine_cycle_iters:
+            return self.min_learning_rate
+        else:
+            cos_inner = math.pi * (it - self.warmup_iters) / (self.cosine_cycle_iters - self.warmup_iters)
+            return self.min_learning_rate + 0.5 * (self.max_learning_rate - self.min_learning_rate) * (1 + math.cos(cos_inner))
+
 
 class AdamW(torch.optim.Optimizer):
-    def __init__(self, params, lr: float, weight_decay: float, betas: tuple[float, float], eps: float):
+    def __init__(self, 
+                 params, 
+                 lr: float, 
+                 weight_decay: float, 
+                 betas: tuple[float, float], 
+                 eps: float = 1e-8):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if not (0 <= betas[0] < 1):
