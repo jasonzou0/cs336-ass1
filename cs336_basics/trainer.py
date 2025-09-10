@@ -71,7 +71,7 @@ def run_training(
     checkpoint_client = CheckpointClient(
         model=model, 
         optimizer=optimizer, 
-        checkpoint_dir=checkpoint_dir)
+        checkpoint_dest=checkpoint_dir)
     trainer = Trainer(
         model=model, 
         data_loader=data_loader, 
