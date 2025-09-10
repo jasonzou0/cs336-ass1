@@ -63,7 +63,9 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
         self.v_proj = Linear(d_in=d_model, d_out=d_v*num_heads, device=self.device, dtype=dtype)
         # Output projection
         self.o_proj = Linear(d_in=d_v*num_heads, d_out=d_model, device=self.device, dtype=dtype)
-        self.attn_mask = torch.tril(torch.ones((max_seq_len, max_seq_len), dtype=torch.bool, device=self.device))
+        self.register_buffer("attn_mask",
+                             torch.tril(torch.ones((max_seq_len, max_seq_len), dtype=torch.bool, device=self.device)),
+                             persistent=False)
 
     def forward(self, 
                 x: Float[Tensor, " ... sequence_length d_model"],
