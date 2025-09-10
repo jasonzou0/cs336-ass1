@@ -167,5 +167,6 @@ cython_debug/
 data0/*
 notebooks/*
 */*.npy
+*.pt
 */pretokenization.pickle
 .DS_Store

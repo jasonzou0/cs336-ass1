@@ -20,8 +20,10 @@ class OptimizerConfig:
     min_learning_rate: float = 1e-5
 
     def __post_init__(self):
+        print(f"OptimizerConfig: {self}")
         if self.warmup_iters is None:
             self.warmup_iters = max(1, self.total_iters // 10)
+            print(f"Setting warmup_iters to {self.warmup_iters}")
         if self.total_iters <= self.warmup_iters:
             raise ValueError("total_iters must be larger than warmup_iters, but got "
                              f"total_iters={self.total_iters} and warmup_iters={self.warmup_iters}")

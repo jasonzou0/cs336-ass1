@@ -16,14 +16,16 @@ class TransformerConfig:
     vocab_size: int
     context_length: int = 256
     d_model: int = 512
-    d_ff: int = None
+    d_ff: int | None = None
     rope_theta: float = 10000.0
     num_layers: int = 4
     num_heads: int = 16
 
     def __post_init__(self):
+        print(f"TransformerConfig: {self}")
         if self.d_ff is None:
             self.d_ff = int(8 * self.d_model / 3)
+            print(f"Setting d_ff to {self.d_ff}")
 
 
 class TransformerBlock(torch.nn.Module):
