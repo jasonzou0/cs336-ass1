@@ -7,6 +7,7 @@ from cs336_basics.optimizer import CosineScheduler, create_from_config, Optimize
 from cs336_basics.data_loader import DataLoader, DataLoaderConfig
 from cs336_basics.module.loss import cross_entropy_loss
 from cs336_basics.checkpoint import CheckpointClient
+from cs336_basics.grad_clipping import grad_clipping
 
 class Trainer:
     def __init__(self, 
@@ -39,6 +40,8 @@ class Trainer:
             loss = cross_entropy_loss(logits, target_ids)
             # Backward pass and optimization step
             loss.backward()
+            # TODO: expose max_l2_norm as a config parameter
+            grad_clipping(self.model.parameters(), max_l2_norm=1.0)
             self.optimizer.step()
             self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)

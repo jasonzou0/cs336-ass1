@@ -14,7 +14,8 @@ def grad_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) 
         grads = [p.grad for p in parameters if p.grad is not None]
         first_device = grads[0].device
         # TODO: check if all grads are on the same device
-        total_norm = torch.linalg.norm(torch.stack([torch.linalg.norm(g, 2) for g in grads]), 2)
+        # NOTE: we have to use torch.norm instead of torch.linalg.norm for compatibility with PyTorch MPS
+        total_norm = torch.norm(torch.stack([torch.norm(g, p=2) for g in grads]), p=2)
         clip_coef = max_l2_norm / (total_norm + 1e-6)
         clip_coef = clip_coef.to(first_device)
         for p in parameters:
