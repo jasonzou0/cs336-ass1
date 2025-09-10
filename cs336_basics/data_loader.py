@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 import numpy as np
 import numpy.typing as npt
 import torch
@@ -13,7 +14,10 @@ class DataLoaderConfig:
     context_length: int = 256
     num_batches: Optional[int] = None
     random_seed: Optional[int] = None
+    mmap_file_size_threshold_mb: int = 512  # If dataset file is larger than this, use memory mapping.
 
+    def __post_init__(self):
+        print(f"DataLoaderConfig: {self}")
 
 class DataLoader:
     """
@@ -32,7 +36,11 @@ class DataLoader:
     """
     @staticmethod
     def from_config(config: DataLoaderConfig, device: str) -> "DataLoader":
-        dataset = np.load(config.dataset_path)
+        mmap_mode = None
+        if os.path.getsize(config.dataset_path) > config.mmap_file_size_threshold_mb * 1024 * 1024:
+            mmap_mode = "r"
+            print(f"Using mmap for {config.dataset_path} as it exceeds {config.mmap_file_size_threshold_mb} MB")
+        dataset = np.load(config.dataset_path, mmap_mode=mmap_mode)
         return DataLoader(
             dataset=dataset,
             batch_size=config.batch_size,
