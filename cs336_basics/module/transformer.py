@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 @dataclass
 class TransformerConfig:
-    vocab_size: int = 10000
+    vocab_size: int
     context_length: int = 256
     d_model: int = 512
     d_ff: int = None

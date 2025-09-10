@@ -11,7 +11,8 @@ import pstats
 import sys
 import time
 
-from cs336_basics.train_bpe import train_bpe, save_bpe
+from cs336_basics.train_bpe import train_bpe
+from cs336_basics.bpe_utils import save_bpe
 
 
 def print_basic_profile_stats(profiler):

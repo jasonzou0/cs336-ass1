@@ -13,7 +13,7 @@ import time
 import pickle
 import os
 from pathlib import Path
-from cs336_basics.train_bpe import load_bpe
+from cs336_basics.bpe_utils import load_bpe
 from cs336_basics.tokenizer import Tokenizer
 
 
