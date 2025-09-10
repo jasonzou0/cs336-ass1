@@ -67,7 +67,7 @@ def run_training(
     else:
         model = torch.compile(model)
     data_loader = DataLoader.from_config(DataLoaderConfig(dataset_path=dataset_path, num_batches=num_batches), device=device)
-    optimizer, scheduler = create_from_config(model.parameters(), config=OptimizerConfig(), cosine_cycle_iters=num_batches)
+    optimizer, scheduler = create_from_config(model.parameters(), config=OptimizerConfig(total_iters=num_batches))
     checkpoint_client = CheckpointClient(
         model=model, 
         optimizer=optimizer, 

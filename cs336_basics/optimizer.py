@@ -6,8 +6,10 @@ from dataclasses import dataclass
 
 @dataclass
 class OptimizerConfig:
+    # The total number of training iterations.
+    total_iters: int
     # Number of iterations to linearly warm up the learning rate.
-    warmup_iters: int = 1000
+    warmup_iters: int | None = None
     # The initial learning rate after warmup.
     learning_rate: float = 1e-3
     # The weight decay to apply.
@@ -17,8 +19,15 @@ class OptimizerConfig:
     # The final learning rate after cosine annealing.
     min_learning_rate: float = 1e-5
 
+    def __post_init__(self):
+        if self.warmup_iters is None:
+            self.warmup_iters = max(1, self.total_iters // 10)
+        if self.total_iters <= self.warmup_iters:
+            raise ValueError("total_iters must be larger than warmup_iters, but got "
+                             f"total_iters={self.total_iters} and warmup_iters={self.warmup_iters}")
 
-def create_from_config(params, config: OptimizerConfig, cosine_cycle_iters: int) -> tuple[torch.optim.Optimizer, "CosineScheduler"]:
+
+def create_from_config(params, config: OptimizerConfig) -> tuple[torch.optim.Optimizer, "CosineScheduler"]:
     """Create a coupled AdamW optimizer and CosineScheduler from a configuration.
 
     Args:
@@ -39,7 +48,7 @@ def create_from_config(params, config: OptimizerConfig, cosine_cycle_iters: int)
         min_learning_rate=config.min_learning_rate,
         optimizer=optimizer,
         warmup_iters=config.warmup_iters,
-        cosine_cycle_iters=cosine_cycle_iters,
+        cosine_cycle_iters=config.total_iters,
     )
     return optimizer, scheduler
 

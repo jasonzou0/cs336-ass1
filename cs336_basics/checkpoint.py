@@ -79,7 +79,7 @@ class CheckpointClient:
             iteration (int): The current training iteration.
         """
         if os.path.isdir(self.checkpoint_dest):
-            checkpoint_path = os.path.join(self.checkpoint_dir, f"checkpoint_step_{iteration}.pt")
+            checkpoint_path = os.path.join(self.checkpoint_dest, f"checkpoint_step_{iteration}.pt")
         else:
             assert self.checkpoint_dest, "checkpoint_dest must be specified"
             checkpoint_path = self.checkpoint_dest
