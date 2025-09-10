@@ -1,3 +1,4 @@
+import argparse
 import torch
 
 from cs336_basics.module.transformer import Transformer, TransformerConfig
@@ -25,10 +26,6 @@ class Trainer:
             get_batch_func (callable): Function to get a batch of input and target tensors.
             num_steps (int): Number of training steps to perform.
         """
-        # torch.autograd.set_detect_anomaly(True)
-        # Move model to the specified device
-        self.model.to(self.device)
-
         for t, (input_ids, target_ids) in enumerate(iter(self.data_loader)):
             # Forward pass
             logits = self.model(input_ids)
@@ -38,17 +35,27 @@ class Trainer:
             self.optimizer.step()
             self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)
-            if t % 20 == 0:
+            if t % 10 == 0:
                 print(f"Step {t}, Loss: {loss.item():.4f}")
     
 
 def run_training(dataset_path: str, num_batches: int, device: str):
     model = Transformer.from_config(TransformerConfig())
+    model.to(device)
+    # TODO: inspect the compiled code. 
+    if device == "mps":
+        model = torch.compile(model, backend="aot_eager")
+    else:
+        model = torch.compile(model)
     data_loader = DataLoader.from_config(DataLoaderConfig(dataset_path=dataset_path, num_batches=num_batches), device=device)
     optimizer, scheduler = create_from_config(model.parameters(), config=OptimizerConfig(), cosine_cycle_iters=num_batches)
     trainer = Trainer(model=model, data_loader=data_loader, optimizer=optimizer, scheduler=scheduler, device=device)
     trainer.train()
 
 if __name__ == "__main__":
-    INPUT = "/Users/jzou/cs336/ass1/tinystories/TinyStoriesV2-GPT4-valid-tokens.npy"
-    run_training(dataset_path=INPUT, num_batches=2000, device="cpu")
+    parser = argparse.ArgumentParser(description="Train a Transformer model")
+    parser.add_argument("--input", required=True, help="Path to the training dataset")
+    parser.add_argument("--device", default="cpu", help="Device to use for training (cpu, cuda, mps)")
+    parser.add_argument("--num-batches", type=int, default=2000, help="Number of training batches")
+    args = parser.parse_args()
+    run_training(dataset_path=args.input, num_batches=args.num_batches, device=args.device)
