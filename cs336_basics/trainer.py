@@ -25,6 +25,7 @@ class Trainer:
             get_batch_func (callable): Function to get a batch of input and target tensors.
             num_steps (int): Number of training steps to perform.
         """
+        # torch.autograd.set_detect_anomaly(True)
         # Move model to the specified device
         self.model.to(self.device)
 
@@ -37,7 +38,7 @@ class Trainer:
             self.optimizer.step()
             self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)
-            if t % 100 == 0:
+            if t % 20 == 0:
                 print(f"Step {t}, Loss: {loss.item():.4f}")
     
 

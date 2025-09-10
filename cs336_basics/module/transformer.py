@@ -52,8 +52,8 @@ class TransformerBlock(torch.nn.Module):
         Returns:
             Tensor of same shape as x
         """
-        x += self.attn(self.rms1(x))
-        x += self.ffn(self.rms2(x))
+        x = x + self.attn(self.rms1(x))
+        x = x + self.ffn(self.rms2(x))
         return x
 
 
