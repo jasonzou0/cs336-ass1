@@ -10,6 +10,22 @@ from .embedding import Embedding
 from jaxtyping import Float, Int
 from dataclasses import dataclass
 
+
+@dataclass
+class TransformerConfig:
+    vocab_size: int = 10000
+    context_length: int = 256
+    d_model: int = 512
+    d_ff: int = None
+    rope_theta: float = 10000.0
+    num_layers: int = 4
+    num_heads: int = 16
+
+    def __post_init__(self):
+        if self.d_ff is None:
+            self.d_ff = int(8 * self.d_model / 3)
+
+
 class TransformerBlock(torch.nn.Module):
     """A single Transformer block consisting of a multi-head self-attention layer
     followed by a feedforward neural network (FFN) with SwiGLU activation.
@@ -40,26 +56,12 @@ class TransformerBlock(torch.nn.Module):
         x += self.ffn(self.rms2(x))
         return x
 
-@dataclass
-class TransformerConfig:
-    vocab_size: int = 10000
-    context_length: int = 256
-    d_model: int = 512
-    d_ff: int = None
-    rope_theta: float = 10000.0
-    num_layers: int = 4
-    num_heads: int = 16
-
-    def __post_init__(self):
-        if self.d_ff is None:
-            self.d_ff = int(8 * self.d_model / 3)
-
 
 class Transformer(torch.nn.Module):
     """A decoder-only Transformer using RoPE and SwiGLU activations."""
     
     @staticmethod
-    def create_from_config(config: TransformerConfig, device=None, dtype=torch.float32):
+    def from_config(config: TransformerConfig, device=None, dtype=torch.float32):
         """Create a Transformer instance from a TransformerConfig.
         
         Args:

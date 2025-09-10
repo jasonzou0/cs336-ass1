@@ -14,7 +14,7 @@ from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.optimizer import AdamW, CosineScheduler
 from cs336_basics.grad_clipping import grad_clipping
-from cs336_basics.data_loader import sample_batch
+from cs336_basics.data_loader import DataLoader
 from cs336_basics.checkpoint import save_checkpoint, load_checkpoint
 from cs336_basics.module import (
     Linear, 
@@ -504,7 +504,8 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    return sample_batch(dataset, batch_size, context_length, device, random_seed=None)
+    data_loader = DataLoader(dataset=dataset, batch_size=batch_size, context_length=context_length, device=device)
+    return next(iter(data_loader))
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
