@@ -66,6 +66,33 @@ def run_training(
     return model
 
 
+def run_eval(
+        model: torch.nn.Module,
+        eval_data_path: str,
+        context_length: int,
+        eval_batch_size: int,
+        device: str):
+    """Run evaluation on a trained Transformer model.
+
+    Args:
+        model (torch.nn.Module): The trained Transformer model.
+        eval_data_path (str): Path to the evaluation dataset (numpy file).
+        context_length (int): Context length for evaluation.
+        device (str): Device to use for evaluation (e.g., "cpu", "cuda", "mps").
+        eval_batch_size (int): Batch size for evaluation.
+    """
+    eval_data_loader = DataLoader.from_config(DataLoaderConfig(
+        dataset_path=eval_data_path,
+        num_batches=None,
+        batch_size=eval_batch_size,
+        context_length=context_length,
+        data_loading_mode=DataLoadingMode.SEQUENTIAL,
+    ), device=device)
+    evaluator = Evaluator(model=model, eval_data_loader=eval_data_loader)
+    avg_loss = evaluator.avg_loss()
+    print(f"Avg Evaluation Loss: {avg_loss:.4f}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a Transformer model")
     parser.add_argument("--train_data", required=True, help="Path to the training dataset")
@@ -87,6 +114,7 @@ if __name__ == "__main__":
         vocab_size=vocab_size, 
         context_length=args.context_length))
     print(f"Starting training with dataset {args.train_data}, vocab_size {vocab_size}, device {args.device}, num_batches {args.num_batches}, checkpoint_dir {args.checkpoint_dir}, checkpoint_interval {args.checkpoint_interval}")
+
     trained_model = run_training(
         model=model,
         dataset_path=args.train_data, 
@@ -100,15 +128,11 @@ if __name__ == "__main__":
     )
     
     if args.eval_data:
-        eval_data_loader = DataLoader.from_config(DataLoaderConfig(
-            dataset_path=args.eval_data,
-            num_batches=None,
-            batch_size=args.batch_size,
+        print(f"Starting evaluation with dataset {args.eval_data}, and eval batch_size {args.batch_size}")
+        run_eval(
+            model=trained_model,
+            eval_data_path=args.eval_data,
             context_length=args.context_length,
-            data_loading_mode=DataLoadingMode.SEQUENTIAL,
-        ), device=args.device)
-
-        evaluator = Evaluator(model=trained_model, eval_data_loader=eval_data_loader)
-        avg_loss = evaluator.avg_loss()
-        print(f"Avg Evaluation Loss: {avg_loss:.4f}")    
-    
+            eval_batch_size=args.batch_size,
+            device=args.device
+        )
