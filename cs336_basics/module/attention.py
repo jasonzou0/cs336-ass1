@@ -83,7 +83,10 @@ class CasualMultiheadSelfAttention(torch.nn.Module):
             Q = self.rope_module(Q, token_positions)
             K = self.rope_module(K, token_positions)
         V: Float[Tensor, " ... h sequence_length dv"] = rearrange(self.v_proj(x), "... sequence_length (h dv) -> ... h sequence_length dv", h=self.num_heads)
-        attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, self.attn_mask[:seq_len, :seq_len])
+        # Disable masking during inference or eval mode for efficiency.
+        # This is correct because only the model predictions for the last token in the sequence are used during inference/eval.
+        mask = self.attn_mask[:seq_len, :seq_len] if self.training else None
+        attn_output: Float[Tensor, " ... h sequence_length dv"] = scaled_dot_product_attention(Q, K, V, mask)
         return self.o_proj(rearrange(attn_output, "... h sequence_length dv -> ... sequence_length (h dv)"))
 
 
