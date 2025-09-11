@@ -12,7 +12,7 @@ def cross_entropy_loss(inputs: Float[Tensor, " batch_size vocab_size"], targets:
         targets: Tensor of shape (batch_size,) containing the true class indices for each example
 
     Returns:
-        Float[Tensor, ""]: The average cross-entropy loss across examples.
+        Float[Tensor, ""]: The average cross-entropy loss across examples in the batch dimensions
     """
     # Subtract the max for numerical stability
     inputs -= torch.max(inputs, dim=-1, keepdim=True).values

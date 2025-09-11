@@ -12,6 +12,7 @@ class DataLoaderConfig:
     dataset_path: str
     batch_size: int = 32
     context_length: int = 256
+    # If None, defaults to covering the dataset roughly once.
     num_batches: Optional[int] = None
     random_seed: Optional[int] = None
     mmap_file_size_threshold_mb: int = 512  # If dataset file is larger than this, use memory mapping.

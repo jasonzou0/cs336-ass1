@@ -28,9 +28,9 @@ sh scripts/build_kernel.sh
 Tokenizer Training:
 
 ```sh
-uv run scripts/train_bpe_cli.py --input-path ${INPUT_DATA} --vocab-size ${VOCAB_SIZE} --output-dir ${OUTPUT_DIR}
+uv run scripts/train_bpe_cli.py --input_path ${INPUT_DATA} --vocab_size ${VOCAB_SIZE} --output_dir ${OUTPUT_DIR}
 ```
-Optionally add `--load-pretokenization` to load pre-existing pretokenization result instead of computing it from scratch.
+Optionally add `--load_pretokenization` to load pre-existing pretokenization result instead of computing it from scratch.
 
 Running tokenization on text file:
 

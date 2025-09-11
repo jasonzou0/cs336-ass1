@@ -80,42 +80,42 @@ def main():
     parser = argparse.ArgumentParser(
         description="Train a BPE tokenizer and save results to disk",
         epilog="""Examples:
-  %(prog)s --input-path data/corpus.txt --vocab-size 1000 --output-dir ./tokenizer_output
-  %(prog)s --input-path data/corpus.txt --vocab-size 500 --output-dir ./out --special-tokens '[\"<|endoftext|>\", \"<|pad|>\"]'
-  %(prog)s --input-path data/corpus.txt --vocab-size 500 --output-dir ./out --profile""",
+  %(prog)s --input_path data/corpus.txt --vocab_size 1000 --output_dir ./tokenizer_output
+  %(prog)s --input_path data/corpus.txt --vocab_size 500 --output_dir ./out --special_tokens '[\"<|endoftext|>\", \"<|pad|>\"]'
+  %(prog)s --input_path data/corpus.txt --vocab_size 500 --output_dir ./out --profile""",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument(
-        "--input-path", 
+        "--input_path", 
         type=str, 
         required=True,
         help="Path to the input corpus file"
     )
 
     parser.add_argument(
-        "--vocab-size", 
+        "--vocab_size", 
         type=int, 
         required=True,
         help="Target vocabulary size"
     )
 
     parser.add_argument(
-        "--output-dir", 
+        "--output_dir", 
         type=str, 
         required=True,
         help="Directory to save vocab.pkl and merges.pkl"
     )
 
     parser.add_argument(
-        "--special-tokens", 
+        "--special_tokens", 
         type=str, 
         default='["<|endoftext|>"]',
         help="JSON list of special tokens (default: [\"<|endoftext|>\"])"
     )
 
     parser.add_argument(
-        "--stop-at-merge-num",
+        "--stop_at_merge_num",
         type=int,
         default=None,
         help="Stop training after this many merges (default: None, which means train until vocab size is reached)"
@@ -128,19 +128,19 @@ def main():
     )
 
     parser.add_argument(
-        "--save-pretokenization",
+        "--save_pretokenization",
         action="store_true",
         help="Save pretokenization results to a pickle file for later reuse"
     )
 
     parser.add_argument(
-        "--load-pretokenization", 
+        "--load_pretokenization", 
         action="store_true",
         help="Load pretokenization results from a pickle file instead of recomputing"
     )
 
     parser.add_argument(
-        "--disable-optimization",
+        "--disable_optimization",
         action="store_true", 
         help="Disable optimized heap-based BPE algorithm (optimization is enabled by default)"
     )
@@ -169,7 +169,7 @@ def main():
 
     # Validate pretokenization flags
     if args.save_pretokenization and args.load_pretokenization:
-        print("Error: Cannot use both --save-pretokenization and --load-pretokenization flags simultaneously.", file=sys.stderr)
+        print("Error: Cannot use both --save_pretokenization and --load_pretokenization flags simultaneously.", file=sys.stderr)
         sys.exit(1)
 
     # Create output directory if it doesn't exist
