@@ -14,7 +14,7 @@ from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.optimizer import AdamW, CosineScheduler
 from cs336_basics.grad_clipping import grad_clipping
-from cs336_basics.data_loader import DataLoader
+from cs336_basics.data_loader import DataLoader, DataLoadingMode
 from cs336_basics.checkpoint import CheckpointClient
 from cs336_basics.module import (
     Linear, 
@@ -504,9 +504,42 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    data_loader = DataLoader(dataset=dataset, batch_size=batch_size, context_length=context_length, device=device)
+    data_loader = DataLoader(
+        dataset=dataset, 
+        batch_size=batch_size, 
+        context_length=context_length, 
+        device=device,
+        data_loading_mode=DataLoadingMode.RANDOM,
+    )
     return next(iter(data_loader))
 
+
+def run_get_sequential_dataloader(
+    dataset: npt.NDArray, batch_size: int, context_length: int, device: str
+) -> DataLoader:
+    """
+    Given a dataset (a 1D numpy array of integers) and a desired batch size and
+    context length, return a DataLoader that sequentially samples language modeling
+    input sequences and their corresponding labels from the dataset.
+
+    Args:
+        dataset (np.array): 1D numpy array of integer token IDs in the dataset.
+        batch_size (int): Desired batch size to sample.
+        context_length (int): Desired context length of each sampled example.
+        device (str): PyTorch device string (e.g., 'cpu' or 'cuda:0') indicating the device
+            to place the sampled input sequences and labels on.
+
+    Returns:
+        DataLoader that sequentially samples language modeling input sequences
+        and their corresponding labels from the dataset.
+    """
+    return DataLoader(
+        dataset=dataset, 
+        batch_size=batch_size, 
+        context_length=context_length, 
+        device=device,
+        data_loading_mode=DataLoadingMode.SEQUENTIAL,
+    )
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
     """

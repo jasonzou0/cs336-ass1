@@ -4,8 +4,51 @@ from collections import Counter
 import numpy as np
 import pytest
 
-from .adapters import run_get_batch
+from .adapters import run_get_batch, run_get_sequential_dataloader
 
+def test_sequence_data_loading():
+    """Test that sequential data loading creates non-overlapping batches with context_length spacing."""
+    dataset = np.arange(0, 100)
+    context_length = 7
+    batch_size = 4
+    device = "cpu"
+
+    data_loader = run_get_sequential_dataloader(
+        dataset=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
+        device=device,
+    )
+
+    # Collect all batches and verify sequential pattern
+    starting_indices = []
+    batch_count = 0
+    
+    for input_ids, target_ids in iter(data_loader):
+        # Verify batch shapes
+        assert input_ids.shape == (batch_size, context_length)
+        assert target_ids.shape == (batch_size, context_length)
+
+        # Verify target is input shifted by 1
+        np.testing.assert_allclose((input_ids + 1).detach().numpy(), target_ids.detach().numpy())
+
+        # Collect starting indices (first token of each sequence in the batch)
+        batch_starting_indices = input_ids[:, 0].tolist()
+        starting_indices.extend(batch_starting_indices)
+        batch_count += 1
+
+    # Expecting 3 complete batches to cover the dataset of size 100 with context_length 7:
+    # Batch 1: starts at [0, 7, 14, 21]
+    # Batch 2: starts at [28, 35, 42, 49
+    # Batch 3: starts at [56, 63, 70, 77]
+    # (Batch 4 would be [84, 91, 98, 105] but 105 is out of bounds)
+    expected_indices = [0, 7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77]
+    assert batch_count == 3, f"Expected 3 batches, but got {batch_count}"
+    assert starting_indices == expected_indices, (
+        f"Expected starting indices to cover the dataset sequentially, "
+        f"but got {starting_indices}, expected {expected_indices}"
+    )
+    
 
 def test_get_batch():
     dataset = np.arange(0, 100)
