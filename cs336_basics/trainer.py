@@ -15,8 +15,23 @@ class Trainer:
                  scheduler: CosineScheduler, 
                  checkpoint_client: CheckpointClient,
                  checkpoint_interval: int,
+                 starting_iteration: int = 0,
                  device: str = None):
+        """
+        Trainer for training a model.
+
+        Args:
+            model (torch.nn.Module): The model to train.
+            starting_iteration (int): The iteration to start training from (useful for resuming from checkpoints).
+            data_loader (DataLoader): DataLoader providing training data.
+            optimizer (torch.optim.Optimizer): Optimizer for updating model parameters.
+            scheduler (CosineScheduler): Learning rate scheduler.
+            checkpoint_client (CheckpointClient): Client for saving and loading checkpoints.
+            checkpoint_interval (int): Interval (in steps) to save checkpoints.
+            device (str): Device to use for training (e.g., "cpu", "cuda", "mps").
+        """
         self.model = model
+        self.starting_iteration = starting_iteration
         self.data_loader = data_loader
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -31,7 +46,7 @@ class Trainer:
             get_batch_func (callable): Function to get a batch of input and target tensors.
             num_steps (int): Number of training steps to perform.
         """
-        t = 0
+        t = self.starting_iteration
         self.model.train()
         for input_ids, target_ids in iter(self.data_loader):
             # Forward pass
@@ -46,7 +61,7 @@ class Trainer:
             self.optimizer.zero_grad(set_to_none=True)
             if t % 10 == 0:
                 print(f"Step {t}, Loss: {loss.item():.4f}")
-            if t % self.checkpoint_interval == 0 and t > 0:
+            if t % self.checkpoint_interval == 0 and t > self.starting_iteration:
                 self.checkpoint_client.save(t)
                 print(f"Checkpoint saved at step {t}")
             t += 1

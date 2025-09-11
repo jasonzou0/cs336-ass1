@@ -15,6 +15,7 @@ def run_training(
         dataset_path: str, 
         vocab_size: int,
         num_batches: int, 
+        load_checkpoint_path: str | None,
         checkpoint_interval: int,
         checkpoint_dir: str,
         device: str) -> torch.nn.Module:
@@ -24,6 +25,7 @@ def run_training(
         dataset_path (str): Path to the training dataset (numpy file).
         vocab_size (int): Size of the vocabulary.
         num_batches (int): Number of training batches.
+        load_checkpoint_path (str | None): Path to a checkpoint to load before training.
         checkpoint_interval (int): Interval (in steps) to save checkpoints.
         checkpoint_dir (str): Directory to save checkpoints.
         device (str): Device to use for training (e.g., "cpu", "cuda", "mps").
@@ -42,9 +44,15 @@ def run_training(
     checkpoint_client = CheckpointClient(
         model=model, 
         optimizer=optimizer, 
+        lr_scheduler=scheduler,
         checkpoint_dest=checkpoint_dir)
+    starting_iteration = 0
+    if load_checkpoint_path:
+        starting_iteration = checkpoint_client.load(load_checkpoint_path)
+        print(f"Loaded checkpoint from {load_checkpoint_path}, starting from iteration {starting_iteration}")
     trainer = Trainer(
         model=model, 
+        starting_iteration=starting_iteration,
         data_loader=data_loader, 
         optimizer=optimizer, 
         scheduler=scheduler, 
@@ -63,6 +71,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_batches", type=int, default=2000, help="Number of training batches")
     parser.add_argument("--checkpoint_dir", type=str, help="Directory to save checkpoints to (default to {input_dir}/checkpoints)")
     parser.add_argument("--checkpoint_interval", type=int, default=1000, help="Checkpoint interval")
+    parser.add_argument("--load_checkpoint", help="Path to a checkpoint to load before training")
     parser.add_argument("--eval_data", help="Path to the evaluation dataset")
     args = parser.parse_args()
 
@@ -75,6 +84,7 @@ if __name__ == "__main__":
         vocab_size=vocab_size,
         num_batches=args.num_batches, 
         device=args.device, 
+        load_checkpoint_path=args.load_checkpoint,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_interval=args.checkpoint_interval)
     

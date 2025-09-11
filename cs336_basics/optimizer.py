@@ -9,6 +9,8 @@ class OptimizerConfig:
     # The total number of training iterations.
     total_iters: int
     # Number of iterations to linearly warm up the learning rate.
+    # If None, defaults to 10% of total_iters.
+    # If 0, no warmup is performed.
     warmup_iters: int | None = None
     # The initial learning rate after warmup.
     learning_rate: float = 1e-3
@@ -89,8 +91,10 @@ class CosineScheduler:
     
     def step(self):
         self.step_count += 1
+        lr = self.get_lr_at_iter(self.step_count)
+        # print(f"Setting Learning rate to: {lr} at step {self.step_count}")
         for group in self.optimizer.param_groups:
-            group['lr'] = self.get_lr_at_iter(self.step_count)
+            group['lr'] = lr
 
     def get_lr_at_iter(self, it: int) -> float:
         """
@@ -109,6 +113,34 @@ class CosineScheduler:
         else:
             cos_inner = math.pi * (it - self.warmup_iters) / (self.cosine_cycle_iters - self.warmup_iters)
             return self.min_learning_rate + 0.5 * (self.max_learning_rate - self.min_learning_rate) * (1 + math.cos(cos_inner))
+    
+    def state_dict(self) -> dict:
+        """
+        Return the scheduler state for checkpointing.
+        
+        Returns:
+            Dictionary containing the scheduler state.
+        """
+        return {
+            'step_count': self.step_count,
+            'max_learning_rate': self.max_learning_rate,
+            'min_learning_rate': self.min_learning_rate,
+            'warmup_iters': self.warmup_iters,
+            'cosine_cycle_iters': self.cosine_cycle_iters,
+        }
+    
+    def load_state_dict(self, state_dict: dict):
+        """
+        Load the scheduler state from a checkpoint.
+        
+        Args:
+            state_dict (dict): Dictionary containing the scheduler state.
+        """
+        self.step_count = state_dict['step_count']
+        self.max_learning_rate = state_dict['max_learning_rate']
+        self.min_learning_rate = state_dict['min_learning_rate']
+        self.warmup_iters = state_dict['warmup_iters']
+        self.cosine_cycle_iters = state_dict['cosine_cycle_iters']
 
 
 class AdamW(torch.optim.Optimizer):
