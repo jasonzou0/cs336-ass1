@@ -158,7 +158,7 @@ def main():
         print(f"Error: Vocabulary size must be positive, got {args.vocab_size}.", file=sys.stderr)
         sys.exit(1)
 
-    # Parse special tokens JSON
+    # Parse special tokens into a list
     try:
         special_tokens = json.loads(args.special_tokens)
         if not isinstance(special_tokens, list) or not all(isinstance(token, str) for token in special_tokens):
@@ -228,7 +228,7 @@ def main():
         print(f"  Execution time: {execution_time:.2f} seconds")
 
         # Save the results to disk
-        save_bpe(vocab, merges, args.output_dir)
+        save_bpe(vocab, merges, special_tokens, args.output_dir)
         print("BPE tokenizer saved successfully!")
 
     try:
