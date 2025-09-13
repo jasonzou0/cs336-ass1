@@ -1,3 +1,4 @@
+from einops import einsum, rearrange
 import multiprocessing as mp
 
 def bpe_worker(chunk, bpe_merges):
