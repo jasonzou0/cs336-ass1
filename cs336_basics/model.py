@@ -465,14 +465,10 @@ def transformer_block(
     """
 
     # initialize modules
-    # ln1 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=in_features.dtype)
-    # ln2 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=in_features.dtype)
-    # ff = SwiGLUModule(d_model=d_model, d_ff=d_ff, device=in_features.device, dtype=in_features.dtype)
+    ln1 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=in_features.dtype)
+    ln2 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=in_features.dtype)
+    ff = SwiGLUModule(d_model=d_model, d_ff=d_ff, device=in_features.device, dtype=in_features.dtype)
     
-    ln1 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=torch.float32)
-    ln2 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=torch.float32)
-    ff = SwiGLUModule(d_model=d_model, d_ff=d_ff, device=in_features.device, dtype=torch.float32)
-
     # load weights
     # TODO: use load_state_dict to do the weights loading???
     # TODO: trace dtype for every variable
@@ -649,7 +645,6 @@ def cross_entropy(
 
     return loss
 
-
 class SGD(torch.optim.Optimizer):
     def __init__(self, params, lr=1e-3):
         if lr < 0:
@@ -702,13 +697,13 @@ class AdamW(torch.optim.Optimizer):
         )
         super().__init__(params, defaults)
 
-    def step(self):
+    def step(self, closure: Optional[Callable] = None):
         """Performs a single optimization step.
         
         Args:
             closure (callable, optional): A closure that reevaluates the model and returns the loss.
         """
-        loss = None
+        loss = None if closure is None else closure()
 
         for group in self.param_groups:
             for p in group['params']:
