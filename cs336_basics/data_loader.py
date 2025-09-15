@@ -31,18 +31,15 @@ class DataLoaderConfig:
 
 class DataLoader:
     """
-    Simple iterable that repeatedly delegates batch construction to sample_batch().
+    A simple data loader that samples from a 1D numpy array of integer token IDs and implements the iterator interface.
 
-    Each iteration yields a fresh random batch sampled from the full dataset.
+    Each batch returned by the iterator's `next()` method consists of `batch_size` sequences of tuple (input_ids, target_ids),
+    where each sequence is of length `context_length`. The target_ids are the input_ids
+    shifted by one position to the right.
 
-    Example:
-        dl = DataLoader(dataset, batch_size=32, context_length=128, device='cpu', num_batches=100, random_seed=42)
-        for x, y in dl:  # yields num_batches batches per epoch
-            ...
-
-    Reproducibility:
-        If random_seed is set, each (epoch, batch_index) pair produces deterministic batches
-        by offsetting the base seed.
+    The data loader supports two modes of data loading: RANDOM and SEQUENTIAL.
+    - In RANDOM mode, each batch is sampled randomly from the dataset.
+    - In SEQUENTIAL mode, batches are generated sequentially from the dataset without overlap.
     """
     @staticmethod
     def from_config(config: DataLoaderConfig, device: str) -> "DataLoader":
@@ -108,7 +105,7 @@ class DataLoader:
         if self._batches_yielded >= self.num_batches:
             raise StopIteration
         if self._data_loading_mode == DataLoadingMode.RANDOM:
-            x, y = sample_batch(
+            x, y = _sample_next_batch(
                 self.dataset,
                 self.batch_size,
                 self.context_length,
@@ -116,7 +113,7 @@ class DataLoader:
                 random_seed=self.random_seed,
             )
         elif self._data_loading_mode == DataLoadingMode.SEQUENTIAL:
-            x, y = get_next_batch(
+            x, y = _get_next_sequential_batch(
                 self.dataset,
                 self.batch_size,
                 self.context_length,
@@ -131,7 +128,7 @@ class DataLoader:
     def set_num_batches(self, num_batches: int):
         self.num_batches = num_batches
 
-def get_next_batch(
+def _get_next_sequential_batch(
     dataset: npt.NDArray,
     batch_size: int,
     context_length: int,
@@ -158,7 +155,7 @@ def get_next_batch(
     return torch.from_numpy(np.stack(x, axis=0)).long().to(device), torch.from_numpy(np.stack(y, axis=0)).long().to(device)
 
 
-def sample_batch(
+def _sample_next_batch(
     dataset: npt.NDArray, 
     batch_size: int, 
     context_length: int, 
