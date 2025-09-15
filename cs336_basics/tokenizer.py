@@ -88,6 +88,14 @@ class Tokenizer(object):
         else:
             print("Using Python tokenization")
 
+        # Pre-compile regex patterns for special tokens to avoid recompilation on every call
+        if self._special_tokens:
+            sorted_special_tokens = sorted(self._special_tokens, key=len, reverse=True)
+            special_pattern = "|".join([re.escape(token) for token in sorted_special_tokens])
+            self._special_pattern_compiled = re.compile(f"({special_pattern})")
+        else:
+            self._special_pattern_compiled = None
+
         # Create a cached version of the encoding function
         # 
         # Cache size analysis result from owt_valid_100k.txt:
@@ -116,11 +124,8 @@ class Tokenizer(object):
         """
         result: list[bytes] = []
 
-        # Use capturing group in split to keep special tokens in the result
-        # Sort special tokens by length (descending) to match longest first for overlapping cases
-        sorted_special_tokens = sorted(self._special_tokens, key=len, reverse=True)
-        special_pattern = "|".join([re.escape(token) for token in sorted_special_tokens])
-        chunks = re.split(f"({special_pattern})", text) if self._special_tokens else [text]
+        # Use pre-compiled regex pattern to avoid recompilation on every call
+        chunks = self._special_pattern_compiled.split(text) if self._special_pattern_compiled else [text]
 
         for chunk in chunks:
             if self._debug:
