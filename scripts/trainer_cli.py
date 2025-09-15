@@ -136,6 +136,10 @@ if __name__ == "__main__":
     
     if args.eval_data:
         print(f"Starting evaluation with dataset {args.eval_data}, and eval batch_size {args.batch_size}")
+        validate_special_tokens(
+            tokens_file=args.eval_data,
+            tokenizer_artifact_dir=args.tokenizer_dir
+        )
         run_eval(
             model=trained_model,
             eval_data_path=args.eval_data,
