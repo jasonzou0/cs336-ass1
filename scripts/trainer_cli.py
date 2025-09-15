@@ -2,6 +2,7 @@ import torch
 import argparse
 import os
 
+from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.trainer import Trainer
 from cs336_basics.module.transformer import Transformer, TransformerConfig
 from cs336_basics.optimizer import create_from_config, OptimizerConfig
@@ -9,6 +10,7 @@ from cs336_basics.data_loader import DataLoader, DataLoaderConfig, DataLoadingMo
 from cs336_basics.checkpoint import CheckpointClient
 from cs336_basics.bpe_utils import load_artifact
 from cs336_basics.evaluator import Evaluator
+from cs336_basics.token_validation import validate_special_tokens
 
 
 def run_training(
@@ -96,7 +98,7 @@ def run_eval(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a Transformer model")
     parser.add_argument("--train_data", required=True, help="Path to the training dataset")
-    parser.add_argument("--vocab", required=True, type=str, help="Path to the tokenizer vocab file")
+    parser.add_argument("--tokenizer_dir", required=True, type=str, help="Path to the tokenizer artifact directory containing vocab.pkl, merges.pkl, and special_tokens.pkl")
     parser.add_argument("--context_length", type=int, default=256, help="Context length for training")
     parser.add_argument("--device", default="cpu", help="Device to use for training (cpu, cuda, mps)")
     parser.add_argument("--num_batches", type=int, default=2000, help="Number of batches to train on")
@@ -107,11 +109,16 @@ if __name__ == "__main__":
     parser.add_argument("--eval_data", help="Path to the evaluation dataset")
     args = parser.parse_args()
 
+    validate_special_tokens(
+        tokens_file=args.train_data,
+        tokenizer_artifact_dir=args.tokenizer_dir
+    )
     if not args.checkpoint_dir:
         args.checkpoint_dir = os.path.join(os.path.dirname(args.train_data), "checkpoints")
-    vocab_size = len(load_artifact(args.vocab))
+    
+    vocab_size=Tokenizer.load_from_directory(args.tokenizer_dir).vocab_size
     model = Transformer.from_config(TransformerConfig(
-        vocab_size=vocab_size, 
+        vocab_size=vocab_size,
         context_length=args.context_length))
     print(f"Starting training with dataset {args.train_data}, vocab_size {vocab_size}, device {args.device}, num_batches {args.num_batches}, checkpoint_dir {args.checkpoint_dir}, checkpoint_interval {args.checkpoint_interval}")
 

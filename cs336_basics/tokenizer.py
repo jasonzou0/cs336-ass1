@@ -37,12 +37,12 @@ class Tokenizer(object):
     def load_from_file(
         vocab_file: str | os.PathLike,
         merges_file: str | os.PathLike,
-        special_tokens_file: str | os.PathLike,
+        special_tokens_file: str | os.PathLike | None,
         **kwargs):
         print(f"Loading BPE tokenizer from {vocab_file}, {merges_file} and {special_tokens_file}")
         return Tokenizer(load_artifact(vocab_file), 
                          load_artifact(merges_file), 
-                         load_artifact(special_tokens_file),
+                         load_artifact(special_tokens_file) if special_tokens_file is not None else [],
                          **kwargs)
 
 

@@ -44,5 +44,5 @@ where `${BPE_ARTIFACT_DIR}` contains the output merges and vocab files from toke
 Training:
 
 ```sh
-uv run scripts/trainer_cli.py --train_data {TRAIN_TOKENS_DATA} --vocab ${VOCAB}  --eval_data {EVAL_TOKENS_DATA} --device=mps  --num_batches=${TRAIN_BATCHES} --checkpoint_interval=${CHECKPOINT_INTERVAL}
+uv run scripts/trainer_cli.py --train_data {TRAIN_TOKENS_DATA} --tokenizer_dir ${BPE_ARTIFACT_DIR}  --eval_data {EVAL_TOKENS_DATA} --device=mps  --num_batches=${TRAIN_BATCHES} --checkpoint_interval=${CHECKPOINT_INTERVAL}
 ```
