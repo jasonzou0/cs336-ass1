@@ -1,8 +1,11 @@
+import os
 import pickle
 import regex as re
 from functools import lru_cache
 
 from typing import Iterable, Iterator
+
+from .bpe_utils import load_artifact
 from .train_bpe import get_pretokenizer
 
 # Try to import Cython optimized functions
@@ -18,6 +21,36 @@ except ImportError:
 #    does not split the "<|endoftext|>" special token.
 # 2. might need to reduce the size of the cache per process to save memory.
 class Tokenizer(object):
+
+    @staticmethod
+    def load_from_directory(
+        artifact_dir: str | os.PathLike,
+        **kwargs):
+        """ Load tokenizer from artifact directory containing vocab.pkl, merges.pkl, and special_tokens.pkl """
+        vocab_file = os.path.join(artifact_dir, "vocab.pkl")
+        merges_file = os.path.join(artifact_dir, "merges.pkl")
+        special_tokens_file = os.path.join(artifact_dir, "special_tokens.pkl")
+        return Tokenizer.load_from_file(vocab_file, merges_file, special_tokens_file, **kwargs)
+    
+
+    @staticmethod
+    def load_from_file(
+        vocab_file: str | os.PathLike,
+        merges_file: str | os.PathLike,
+        special_tokens_file: str | os.PathLike,
+        **kwargs):
+        print(f"Loading BPE tokenizer from {vocab_file}, {merges_file} and {special_tokens_file}")
+        return Tokenizer(load_artifact(vocab_file), 
+                         load_artifact(merges_file), 
+                         load_artifact(special_tokens_file),
+                         **kwargs)
+
+
+    @property
+    def vocab_size(self) -> int:
+        return len(self._vocab)
+    
+
     def __init__(
         self, 
         vocab: dict[int, bytes], 

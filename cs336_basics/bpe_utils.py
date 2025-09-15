@@ -18,25 +18,6 @@ def load_artifact(
     return artifact
 
 
-def load_bpe(
-        vocab_path: str | os.PathLike,
-        merges_path: str | os.PathLike,
-        special_tokens_path: str | os.PathLike = None
-    ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    """
-    Load BPE vocabulary and merges from pickled files.
-    Args:
-        vocab_path: Path to the pickled vocabulary file (vocab.pkl)
-        merges_path: Path to the pickled merges file (merges.pkl)
-        special_tokens_path: Optional path to a text file containing special tokens, one per line.
-    Returns:
-        Tuple of (vocab, merges, special_tokens)
-    """
-    return (load_artifact(vocab_path), 
-            load_artifact(merges_path), 
-            load_artifact(special_tokens_path) if special_tokens_path else [])
-
-
 def save_bpe(
     vocab: dict[int, bytes], 
     merges: list[tuple[bytes, bytes]], 

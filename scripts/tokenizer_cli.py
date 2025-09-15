@@ -13,7 +13,6 @@ import time
 import pickle
 import os
 from pathlib import Path
-from cs336_basics.bpe_utils import load_bpe
 from cs336_basics.tokenizer import Tokenizer
 
 
@@ -70,33 +69,20 @@ def main():
     args = parser.parse_args()
     
     # Construct paths
-    artifact_dir = Path(args.artifact_dir)
-    vocab_file = artifact_dir / "vocab.pkl"
-    merges_file = artifact_dir / "merges.pkl"
-    special_tokens_file = artifact_dir / "special_tokens.pkl"
     output_dir = Path(args.output_directory)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate output file paths
     tokens_path, checkpoint_path = get_output_paths(output_dir, args.input_text)
     
-    # Load BPE vocabulary and merges
-    print(f"Loading BPE from {vocab_file} and {merges_file}")
-    vocab, merges, special_tokens = load_bpe(vocab_file, merges_file, special_tokens_file)
-    print(f"Loaded vocab size: {len(vocab)}, merges size: {len(merges)}, special tokens: {special_tokens}")
-    
-    # Determine Cython usage (default is to use it if available, unless explicitly disabled)
-    # Don't pass use_cython unless explicitly set by user, let tokenizer decide
+    # Load BPE
     tokenizer_kwargs = {
         'progress_interval': args.progress_interval,
         'cache_size': args.cache_size,
     }
-
     if args.no_cython:
         tokenizer_kwargs['use_cython'] = False
-
-    # Create tokenizer instance with progress tracking and cache configuration
-    tokenizer = Tokenizer(vocab, merges, special_tokens=special_tokens, **tokenizer_kwargs)
+    tokenizer = Tokenizer.load_from_directory(args.artifact_dir, **tokenizer_kwargs)
     
     # Get file size for display
     file_size_bytes = Path(args.input_text).stat().st_size
