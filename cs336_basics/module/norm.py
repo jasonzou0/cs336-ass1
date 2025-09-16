@@ -23,7 +23,7 @@ class RmsNorm(torch.nn.Module):
         in_dtype = x.dtype
         # Upcast to float32 to prevent overflow
         x = x.to(torch.float32)
-        norm: Float[Tensor, "batch seq 1"] = reduce(x, "batch seq d_model -> batch seq", reduction=rms).unsqueeze(-1)
+        norm: Float[Tensor, "batch seq 1"] = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps)
         res: Float[Tensor, "batch seq d_model"] = x * self.gain / norm
         return res.to(in_dtype)
 

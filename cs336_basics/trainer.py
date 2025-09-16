@@ -35,9 +35,9 @@ def run_training(
     model.to(device)
     # TODO: inspect the compiled code. 
     if device == "mps":
-        model = torch.compile(model, backend="aot_eager")
+        model = torch.compile(model, backend="aot_eager", fullgraph=True)
     else:
-        model = torch.compile(model)
+        model = torch.compile(model, fullgraph=True)
     train_data_loader = DataLoader.from_config(
         DataLoaderConfig(dataset_path=dataset_path, num_batches=num_batches, batch_size=batch_size, context_length=conxtext_length, data_loading_mode=DataLoadingMode.RANDOM), 
         device=device)
