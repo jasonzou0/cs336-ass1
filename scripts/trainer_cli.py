@@ -8,6 +8,7 @@ from cs336_basics.module.model_wrapper import ModelWrapperWithCELoss
 from cs336_basics.token_validation import validate_special_tokens
 from cs336_basics.trainer import run_training
 from cs336_basics.evaluator import run_eval
+from cs336_basics.resource_accounting import print_resource_summary
 
 
 if __name__ == "__main__":
@@ -32,14 +33,16 @@ if __name__ == "__main__":
         args.checkpoint_dir = os.path.join(os.path.dirname(args.train_data), "checkpoints")
     
     vocab_size=Tokenizer.load_from_directory(args.tokenizer_dir).vocab_size
-    model = ModelWrapperWithCELoss(
-        Transformer.from_config(
-            TransformerConfig(
-                vocab_size=vocab_size,
-                context_length=args.context_length
-            )
-        )
+    config = TransformerConfig(
+        vocab_size=vocab_size,
+        context_length=args.context_length
     )
+    model = ModelWrapperWithCELoss(
+        Transformer.from_config(config)
+    )
+    
+    print_resource_summary(config)
+    
     print(f"Starting training with dataset {args.train_data}, vocab_size {vocab_size}, device {args.device}, num_batches {args.num_batches}, checkpoint_dir {args.checkpoint_dir}, checkpoint_interval {args.checkpoint_interval}")
 
     trained_model = run_training(
