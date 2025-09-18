@@ -1,3 +1,4 @@
+from math import exp
 import torch
 
 from cs336_basics.data_loader import DataLoader, DataLoaderConfig, DataLoadingMode
@@ -27,35 +28,37 @@ def run_eval(
     ), device=device)
     evaluator = Evaluator(model_with_loss=model, eval_data_loader=eval_data_loader)
     avg_loss = evaluator.avg_loss()
-    print(f"Avg Evaluation Loss: {avg_loss:.4f}")
+    print(f"Avg Cross Entropy Loss: {avg_loss:.4f}")
+    print(f"Avg Perplexity: {exp(avg_loss):.4f}")
 
 
 class Evaluator:
-    def __init__(self, 
+    def __init__(self,
                  model_with_loss: torch.nn.Module,
                  eval_data_loader: DataLoader = None) -> None:
         """Evaluator for computing average loss on an evaluation dataset."""
         self.model_with_loss = model_with_loss
         self.eval_data_loader = eval_data_loader
 
+    @torch.no_grad()
     def avg_loss(self) -> float:
         """Compute the average loss over the evaluation dataset (averaged over all tokens)."""
         self.model_with_loss.eval()
 
-        total_loss = 0.0
-        total_tokens = 0
+        losses = []
+        token_counts = []
 
-        with torch.no_grad():
-            t = 0
-            for input_ids, target_ids in self.eval_data_loader:
-                loss = self.model_with_loss(input_ids, target_ids)
-                
-                # Accumulate loss weighted by number of tokens
-                batch_tokens = target_ids.numel()
-                total_loss += loss.item() * batch_tokens
-                total_tokens += batch_tokens
-                if t % 100 == 0:
-                    print(f"Loss at eval batch {t}: {loss.item():.4f}")
-                t += 1
-        
-        return total_loss / total_tokens if total_tokens > 0 else 0.0
+        for t, (input_ids, target_ids) in enumerate(self.eval_data_loader):
+            loss = self.model_with_loss(input_ids, target_ids)
+            batch_tokens = target_ids.shape[0] * target_ids.shape[1]  # batch_size * seq_len
+
+            # Keep tensors on GPU, accumulate in lists
+            losses.append(loss * batch_tokens)
+            token_counts.append(batch_tokens)
+
+        # Single GPU-CPU sync at the end
+        if losses:
+            total_loss = torch.stack(losses).sum().item()
+            total_tokens = sum(token_counts)
+            return total_loss / total_tokens
+        return 0.0
