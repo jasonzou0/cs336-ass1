@@ -5,7 +5,7 @@ from torch import Tensor
 from jaxtyping import Float, Int
 
 
-def sample_next_token(
+def nucleus_sampling(
         logits: Float[Tensor, "vocab_size"],
         temperature: float,
         nucleus_sampling_p: float) -> Int[Tensor, "1"]:
@@ -20,18 +20,18 @@ def sample_next_token(
     # Apply temperature scaling
     scaled_logits = logits / temperature
     # Nucleus sampling
-    sorted_logits, sorted_indices = torch.sort(scaled_logits, descending=True)
-    cumulative_probs = torch.softmax(sorted_logits, dim=-1).cumsum(dim=-1)
+    probabilities = softmax(scaled_logits, dim=-1)
+    sorted_prob, sorted_indices = torch.sort(probabilities, descending=True)
+    cumulative_probs = sorted_prob.cumsum(dim=-1)
     sorted_indices_to_remove = cumulative_probs >= nucleus_sampling_p
     # Ensure at least one token is kept - shift mask to keep the first index that is >= nucleus_sampling_p
     sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
     sorted_indices_to_remove[0] = False
-    # Create a boolean mask for the original logits based on the sorted indices that should be removed
-    mask = torch.zeros_like(scaled_logits, dtype=torch.bool)
-    mask.scatter_(0, sorted_indices, sorted_indices_to_remove)
-    # Remove logits for tokens outside the nucleus
-    scaled_logits.masked_fill_(mask, -float('Inf'))
-    probabilities = softmax(scaled_logits, dim=-1)
+    # Remove probabilities that are not in the nucleus
+    mask_to_remove = torch.zeros_like(logits, dtype=torch.bool)
+    mask_to_remove.scatter_(-1, sorted_indices, sorted_indices_to_remove)
+    probabilities = probabilities.masked_fill(mask_to_remove, 0.0)
+    # Sample from the filtered distribution (torch.multinomial re-normalizes the probabilities)
     next_token_id = torch.multinomial(probabilities, num_samples=1)
     return next_token_id
 
@@ -62,7 +62,7 @@ class ModelWrapperWithDecoder(torch.nn.Module):
 
         logits = self.model(input_tokens)  # (seq_len, vocab_size)
         next_token_logits = logits[-1]  # (vocab_size,)
-        return sample_next_token(
+        return nucleus_sampling(
             logits=next_token_logits,
             temperature=self.temperature,
             nucleus_sampling_p=self.nucleus_sampling_p

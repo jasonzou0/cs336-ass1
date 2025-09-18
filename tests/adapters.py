@@ -16,16 +16,17 @@ from cs336_basics.optimizer import AdamW, CosineScheduler
 from cs336_basics.grad_clipping import grad_clipping
 from cs336_basics.data_loader import DataLoader, DataLoadingMode
 from cs336_basics.checkpoint import CheckpointClient
+from cs336_basics.decoder import nucleus_sampling
 from cs336_basics.module import (
-    Linear, 
-    Embedding, 
-    RmsNorm, 
-    silu, 
-    SwiGLU, 
-    Rope, 
-    softmax, 
-    scaled_dot_product_attention, 
-    CasualMultiheadSelfAttention, 
+    Linear,
+    Embedding,
+    RmsNorm,
+    silu,
+    SwiGLU,
+    Rope,
+    softmax,
+    scaled_dot_product_attention,
+    CasualMultiheadSelfAttention,
     TransformerBlock,
     Transformer,
     cross_entropy_loss,
@@ -505,9 +506,9 @@ def run_get_batch(
         language modeling labels.
     """
     data_loader = DataLoader(
-        dataset=dataset, 
-        batch_size=batch_size, 
-        context_length=context_length, 
+        dataset=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
         device=device,
         data_loading_mode=DataLoadingMode.RANDOM,
     )
@@ -534,9 +535,9 @@ def run_get_sequential_dataloader(
         and their corresponding labels from the dataset.
     """
     return DataLoader(
-        dataset=dataset, 
-        batch_size=batch_size, 
-        context_length=context_length, 
+        dataset=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
         device=device,
         data_loading_mode=DataLoadingMode.SEQUENTIAL,
     )
@@ -728,16 +729,20 @@ def run_train_bpe(
     """
     # Call your actual train_bpe function from src/train_bpe.py
     vocab, merges = train_bpe(
-        input_path=input_path, 
-        vocab_size=vocab_size, 
+        input_path=input_path,
+        vocab_size=vocab_size,
         special_tokens=special_tokens,
-        use_optimization=True, 
+        use_optimization=True,
         **kwargs)
-    
+
     # Log the results
     actual_vocab_size = len(vocab)
     print(f"BPE Training completed:")
     print(f"  Input vocab size: {vocab_size}")
     print(f"  Final vocab size: {actual_vocab_size}")
-    
+
     return vocab, merges
+
+def top_p_sampling(
+    logits: Float[Tensor, " ... vocab_size"], p: float, temperature: float = 1.0):
+    return nucleus_sampling(logits=logits, nucleus_sampling_p=p, temperature=temperature)
