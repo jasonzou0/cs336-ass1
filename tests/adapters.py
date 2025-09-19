@@ -12,8 +12,17 @@ from torch import Tensor
 
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
-from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE
-from cs336_basics.model import scaled_dot_product_attention, softmax, multihead_self_attention, multihead_self_attention_with_rope, transformer_block, transformer_lm, cross_entropy, AdamW
+from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW
+from cs336_basics.model import scaled_dot_product_attention, \
+softmax, \
+multihead_self_attention, \
+multihead_self_attention_with_rope, \
+transformer_block, \
+transformer_lm, \
+cross_entropy, \
+learning_rate_schedule, \
+gradient_clipping 
+from cs336_basics.dataloader import get_batch
 
 
 def run_linear(
@@ -481,7 +490,8 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return get_batch(dataset=dataset.tolist(), context_length=context_length, batch_size=batch_size, device=device)
+    # raise NotImplementedError
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -529,7 +539,8 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    return gradient_clipping(parameters, max_l2_norm)
+    # raise NotImplementedError
 
 
 def get_adamw_cls() -> Any:
@@ -565,7 +576,14 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return learning_rate_schedule(
+        it=it,
+        max_learning_rate=max_learning_rate,
+        min_learning_rate=min_learning_rate,
+        warmup_iters=warmup_iters,  
+        cosine_cycle_iters=cosine_cycle_iters
+    )
+    # raise NotImplementedError
 
 
 def run_save_checkpoint(

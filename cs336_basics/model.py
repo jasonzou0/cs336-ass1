@@ -118,7 +118,11 @@ class SwiGLUModule(nn.Module):
         return out.view(orig_shape)
     
 class RoPE(torch.nn.Module):
-    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None, dtype=torch.float32):
+    def __init__(self, theta: float, 
+                 d_k: int, 
+                 max_seq_len: int, 
+                 device: torch.device=torch.device('cpu'), 
+                 dtype: torch.dtype=torch.float32):
         """ the RoPE module and create buffers if needed. Rotary Position Embeddings.
 
         Args:
@@ -176,7 +180,9 @@ class RoPE(torch.nn.Module):
         sin = getattr(self, "sin")[:seq_len, :]
         return cos, sin
 
-    def forward(self, x: Float[Tensor, "batch seq_len d_k"], token_positions: Int[Tensor, "... seq_len"] | None = None) -> Float[Tensor, "batch seq_len d_k"]:
+    def forward(self, 
+                x: Float[Tensor, "batch seq_len d_k"], 
+                token_positions: Int[Tensor, "... seq_len"] | None = None) -> Float[Tensor, "batch seq_len d_k"]:
         """ Apply RoPE to the input tensor x.
         Args:
             x: Float[Tensor, "batch seq_len d_k"] Input tensor to apply RoPE to
@@ -208,7 +214,6 @@ class RoPE(torch.nn.Module):
             sin = sin_full[token_positions]
 
         # Split x into even and odd parts
-        # TODO: AI code, how does it work? Every 2 items picked from 0 and from 1?
         # ... means as much : as possible for prior dimensions
         # x:y:z means x to z-1, step y
         x1 = x[..., ::2]
@@ -645,29 +650,6 @@ def cross_entropy(
 
     return loss
 
-class SGD(torch.optim.Optimizer):
-    def __init__(self, params, lr=1e-3):
-        if lr < 0:
-            raise ValueError(f"Invalid learning rate: {lr}")
-        defaults = {"lr": lr}
-        super().__init__(params, defaults)
-
-    def step(self, closure: Optional[Callable] = None):
-        loss = None if closure is None else closure()
-        for group in self.param_groups:
-            lr = group["lr"]   # Get the learning rate.
-
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-
-                state = self.state[p]         # Get state associated with p.
-                t = state.get("t", 0)         # Get iteration number from the state, or initial value.
-                grad = p.grad.data            # Get the gradient of loss with respect to p.
-                p.data -= lr / math.sqrt(t + 1) * grad   # Update weight tensor in-place.
-                state["t"] = t + 1            # Increment iteration number.
-        return loss
-
 class AdamW(torch.optim.Optimizer):
     """Implements AdamW optimizer (Adam with decoupled weight decay).
     
@@ -751,3 +733,56 @@ class AdamW(torch.optim.Optimizer):
                 p.data.addcdiv_(exp_avg, denom, value=-step_size)
 
         return loss
+
+def learning_rate_schedule(it: int,
+                           max_learning_rate: float,
+                           min_learning_rate: float,
+                           warmup_iters: int,
+                           cosine_cycle_iters: int) -> float: 
+    """ Learning rate schedule with linear warmup and cosine decay.
+    Args:
+        t (int): Current training step
+        alpha_max (float): Maximum learning rate after warmup
+        alpha_min (float): Minimum learning rate at the end of training
+        Tw (int): Number of warmup steps
+        Tc (int): Total number of training steps
+    Returns:
+        float: Learning rate at step t  
+    """
+    if it < warmup_iters:
+        # Linear warmup
+        return max_learning_rate * (it / warmup_iters)
+    elif it <= cosine_cycle_iters:
+        # Cosine decay
+        decay_steps = it - warmup_iters
+        total_decay_steps = cosine_cycle_iters - warmup_iters
+        cosine_decay = 0.5 * (1 + math.cos(math.pi * decay_steps / total_decay_steps))
+        return min_learning_rate + (max_learning_rate - min_learning_rate) * cosine_decay
+    else:
+        # After Tc, keep learning rate at alpha_min
+        return min_learning_rate  
+    
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float, eps: float = 1e-6) -> None:
+    """ Clips gradients of the given parameters to a maximum L2 norm.
+        parameters (Iterable[torch.nn.Parameter]): An iterable of model parameters whose gradients will be clipped.
+        max_l2_norm (float): The maximum allowed L2 norm for the gradients.
+    Returns:
+        None
+    """
+    # print(f"Clipping gradients with max_l2_norm={max_l2_norm}")        
+    total_norm:float =0.0
+    for parameter in parameters:
+        # print(f"parameter={parameter}")
+        # print(f"parameter.grad={parameter.grad}")
+        if parameter.grad is not None:
+            grad_norm = parameter.grad.data.norm(2)
+            total_norm += grad_norm ** 2
+    total_norm = total_norm ** 0.5
+
+    for parameter in parameters:
+        if parameter.grad is not None:
+            # Clip gradients in-place to the specified max L2 norm
+            grad_norm = parameter.grad.data.norm(2)
+            if grad_norm > max_l2_norm:
+                parameter.grad.data = parameter.grad.data * (max_l2_norm / (total_norm+eps))
+            
