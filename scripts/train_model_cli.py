@@ -81,6 +81,8 @@ def main():
                          d_ff=args.d_ff,
                          dropout=args.dropout,
                          device=args.device)
+    model.to(args.device)
+    model=torch.compile(model)  # Optional: Compile the model for performance
 
     # Create optimizer
     optimizer=AdamW(model.parameters(), lr=args.learning_rate)
