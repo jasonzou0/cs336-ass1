@@ -72,6 +72,7 @@ def main():
             torch.cuda.manual_seed_all(args.seed)
 
     # Create Model
+    # TODO: update model parameters to match the model
     model=transformer_lm(vocab_size=args.vocab_size,  # Example vocab size
                          context_length=args.context_length,
                          n_layers=args.n_layers,
