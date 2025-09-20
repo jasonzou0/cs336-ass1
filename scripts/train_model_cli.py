@@ -2,7 +2,7 @@ import datetime
 import os.path
 import argparse
 import torch
-from tokenizers import Tokenizer
+# from tokenizers import Tokenizer
 from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW
 from cs336_basics.model import scaled_dot_product_attention, \
 softmax, \
@@ -20,12 +20,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train a Transformer language model.")
 
     # data and checkpointing
-    parser.add_argument('--data', type=str, required=True, help='Path to the training data file.')
+    parser.add_argument('--data', type=str, default=f"data/{str(datetime.datetime.now()).replace(':','_')}", help='Path to the training data file.')
 
     # data hyperparameters
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training.')
     parser.add_argument('--context_length', type=int, default=128, help='Context length for the model.')
-    parser.add_argument('--vocab_size', type=int, default=50257, required=True, help='Vocabulary size.')
+    parser.add_argument('--vocab_size', type=int, default=50257, help='Vocabulary size.')
 
     # model hyperparameters
     parser.add_argument('--n_layers', type=int, default=6, help='Number of transformer layers.')
@@ -66,7 +66,7 @@ def main():
         os.makedirs(dir_checkpoints)
 
     # Set random seed for reproducibility
-    if args.seed<>0:
+    if args.seed!=0:
         torch.manual_seed(args.seed)
         if args.device.startswith('cuda'):
             torch.cuda.manual_seed_all(args.seed)
@@ -139,4 +139,7 @@ def main():
 
         # Increment iteration counter 
         iter+=1
+    
+if __name__ == "__main__":
+    main()
     

@@ -57,10 +57,16 @@ def get_cache_updates(old_bytes: tuple[bytes], new_bytes: tuple[bytes], skip_upd
 # print("--------------------------------------------------------")
 
 
-old=(b'l', b'o', b'w')
-new=(b'l', b'o', b'w')
-print(f"old={old} \nnew={new}")
-print(f"old_pairs={get_pairs(old)}")
-print(f"new_pairs={get_pairs(new)}")
-a,u,d=get_cache_updates(old, new, False)
-print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")
+def test_process_cache():
+    old=(b'l', b'o', b'w')
+    new=(b'l', b'o', b'w')
+    print(f"old={old} \nnew={new}")
+    print(f"old_pairs={get_pairs(old)}")
+    print(f"new_pairs={get_pairs(new)}")
+
+    a,u,d=get_cache_updates(old, new, False)
+    print(f"Add: {a}, \nUpdate: {u}, \nDelete: {d}")
+
+    assert a==set()
+    assert u=={(b'l', b'o'), (b'o', b'w')}
+    assert d==set()

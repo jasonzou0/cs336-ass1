@@ -15,10 +15,10 @@ def get_batch(dataset: list, context_length: int, batch_size: int, device: str) 
     if len(dataset) < context_length + 1:
         raise ValueError("Dataset too small for context_length + 1")
 
-    starts = []
     max_start = len(dataset) - context_length - 1
-    if max_start < 0:
-        raise ValueError("Dataset too small for context_length")
+    assert max_start >= 0, "Dataset too small for context_length"
+
+    starts = []
     for _ in range(batch_size):
         start = random.randint(0, max_start)
         starts.append(start)
