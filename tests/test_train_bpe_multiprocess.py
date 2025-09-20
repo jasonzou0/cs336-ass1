@@ -1,17 +1,17 @@
 from einops import einsum, rearrange
 import multiprocessing as mp
 
-def bpe_worker(chunk, bpe_merges):
-    # Apply BPE merges to the chunk
-    return [apply_bpe(line, bpe_merges) for line in chunk]
-
 def apply_bpe(text, merges):
     # Dummy BPE implementation
     for merge in merges:
         text = text.replace(merge[0] + merge[1], merge[0] + '_' + merge[1])
     return text
 
-def multiprocess_bpe(input_lines, bpe_merges, num_workers=4):
+def bpe_worker(chunk, bpe_merges):
+    # Apply BPE merges to the chunk
+    return [apply_bpe(line, bpe_merges) for line in chunk]
+
+def multiprocess_bpe(input_lines, bpe_merges, num_workers=8):
     chunk_size = max(1,len(input_lines) // num_workers)
     chunks = [input_lines[i:i+chunk_size] for i in range(0, len(input_lines), chunk_size)]
     with mp.Pool(num_workers) as pool:
