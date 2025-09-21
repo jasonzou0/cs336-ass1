@@ -102,7 +102,6 @@ class Decoder(torch.nn.Module):
         Returns:
             Int[Tensor, " new_seq_len"]: Generated token IDs of shape (new_seq_len,).
         """
-
         for _ in range(self.max_new_tokens):
             next_token_id = self.model(prompt_tokens)  # (1,)
             if self.eos_token is not None and next_token_id.item() == self.eos_token:

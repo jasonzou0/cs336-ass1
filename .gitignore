@@ -170,3 +170,4 @@ notebooks/*
 *.pt
 */pretokenization.pickle
 .DS_Store
+wandb/*

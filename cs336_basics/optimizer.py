@@ -20,6 +20,8 @@ class OptimizerConfig:
     betas: tuple[float, float] = (0.9, 0.999)
     # The final learning rate after cosine annealing.
     min_learning_rate: float = 1e-5
+    # Maximum L2 norm for gradient clipping.
+    max_l2_norm: float = 1.0
 
     def __post_init__(self):
         print(f"OptimizerConfig: {self}")
@@ -65,30 +67,30 @@ class CosineScheduler:
         self,
         min_learning_rate: float,
         optimizer: torch.optim.Optimizer,
-        warmup_iters: int, 
+        warmup_iters: int,
         cosine_cycle_iters: int,
     ):
         """
         Initialize the cosine scheduler.
-        
+
         Args:
-            torch.optim.Optimizer: optimizer to attach the scheduler to. 
+            torch.optim.Optimizer: optimizer to attach the scheduler to.
                 Its initial learning rate is the learning rate warmup target.
             min_learning_rate (float): the minimum / final learning rate.
             warmup_iters (int): the number of iterations to linearly warm-up learning rate to .
             cosine_cycle_iters (int): the number of cosine annealing iterations.
-            
+
         """
         assert cosine_cycle_iters > warmup_iters, "cosine_cycle_iters must be larger than warmup_iters, but got " \
             f"cosine_cycle_iters={cosine_cycle_iters} and warmup_iters={warmup_iters}"
-        
+
         self.optimizer = optimizer
         self.max_learning_rate = self.optimizer.param_groups[0]["lr"]
         self.min_learning_rate = min_learning_rate
         self.warmup_iters = warmup_iters
         self.cosine_cycle_iters = cosine_cycle_iters
         self.step_count = 0
-    
+
     def step(self):
         self.step_count += 1
         lr = self.get_lr_at_iter(self.step_count)
@@ -99,10 +101,10 @@ class CosineScheduler:
     def get_lr_at_iter(self, it: int) -> float:
         """
         Get the learning rate for the given iteration.
-        
+
         Args:
             it (int): Iteration number to get learning rate for.
-            
+
         Returns:
             Learning rate at the given iteration under the specified schedule.
         """
@@ -113,11 +115,11 @@ class CosineScheduler:
         else:
             cos_inner = math.pi * (it - self.warmup_iters) / (self.cosine_cycle_iters - self.warmup_iters)
             return self.min_learning_rate + 0.5 * (self.max_learning_rate - self.min_learning_rate) * (1 + math.cos(cos_inner))
-    
+
     def state_dict(self) -> dict:
         """
         Return the scheduler state for checkpointing.
-        
+
         Returns:
             Dictionary containing the scheduler state.
         """
@@ -128,11 +130,11 @@ class CosineScheduler:
             'warmup_iters': self.warmup_iters,
             'cosine_cycle_iters': self.cosine_cycle_iters,
         }
-    
+
     def load_state_dict(self, state_dict: dict):
         """
         Load the scheduler state from a checkpoint.
-        
+
         Args:
             state_dict (dict): Dictionary containing the scheduler state.
         """
@@ -144,11 +146,11 @@ class CosineScheduler:
 
 
 class AdamW(torch.optim.Optimizer):
-    def __init__(self, 
-                 params, 
-                 lr: float, 
-                 weight_decay: float, 
-                 betas: tuple[float, float], 
+    def __init__(self,
+                 params,
+                 lr: float,
+                 weight_decay: float,
+                 betas: tuple[float, float],
                  eps: float = 1e-8):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -163,7 +165,7 @@ class AdamW(torch.optim.Optimizer):
             "eps": eps,
         }
         super().__init__(params, defaults)
-    
+
     @torch.no_grad()
     def step(self, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
@@ -181,17 +183,17 @@ class AdamW(torch.optim.Optimizer):
                     continue
                 state = self.state[p]
                 # Iteration number
-                t = state.get("t", 1) 
+                t = state.get("t", 1)
                 # Get stored 1st and 2nd moments.
                 m = state.get("m", torch.zeros_like(p.data))
                 v = state.get("v", torch.zeros_like(p.data))
                 # Update moments and store back into parameter state.
                 m.mul_(beta1).add_(p.grad, alpha=1 - beta1)
                 v.mul_(beta2).addcmul_(p.grad, p.grad, value=1 - beta2)
-                state["m"] = m 
+                state["m"] = m
                 state["v"] = v
                 alpha = lr * (math.sqrt(1 - beta2 ** t) / (1 - beta1 ** t))
-                # Perform parameter update.                
+                # Perform parameter update.
                 p.addcdiv_(m, torch.sqrt(v).add_(eps), value=-alpha)
                 p.sub_(p, alpha=lr_m_weight_decay)
                 # Update step in parameter state.

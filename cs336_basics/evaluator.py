@@ -1,5 +1,7 @@
 from math import exp
+
 import torch
+import wandb
 
 from cs336_basics.data_loader import DataLoader, DataLoaderConfig, DataLoadingMode
 
@@ -9,7 +11,8 @@ def run_eval(
         eval_data_path: str,
         context_length: int,
         eval_batch_size: int,
-        device: str):
+        device: str,
+        wandb: wandb.Run | None) -> None:
     """Run evaluation on a trained Transformer model.
 
     Args:
@@ -30,6 +33,8 @@ def run_eval(
     avg_loss = evaluator.avg_loss()
     print(f"Avg Cross Entropy Loss: {avg_loss:.4f}")
     print(f"Avg Perplexity: {exp(avg_loss):.4f}")
+    if wandb is not None:
+        wandb.log({"eval/avg_loss": avg_loss, "eval/perplexity": exp(avg_loss)})
 
 
 class Evaluator:
