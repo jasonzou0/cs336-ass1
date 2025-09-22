@@ -4,10 +4,10 @@ from .module.transformer import TransformerConfig
 def model_params(config: TransformerConfig) -> int:
     """
     Get the total number of trainable model parameters.
-    
+
     Args:
         config: TransformerConfig with model configuration
-        
+
     Returns:
         int: Total number of trainable parameters
     """
@@ -30,10 +30,10 @@ def model_params(config: TransformerConfig) -> int:
 def flops(config: TransformerConfig) -> float:
     """
     Get total number of FLOPs to run forward pass on a single batch of input with (context_length, d_model) shape.
-    
+
     Args:
         config: TransformerConfig with model configuration
-        
+
     Returns:
         float: Total number of FLOPs for forward pass
     """
@@ -54,7 +54,7 @@ def flops(config: TransformerConfig) -> float:
 def print_resource_summary(config: TransformerConfig, model_name: str = None) -> None:
     """
     Print a summary of model parameters and FLOPs.
-    
+
     Args:
         config: TransformerConfig with model configuration
         model_name: Optional name for the model to include in output
@@ -63,10 +63,10 @@ def print_resource_summary(config: TransformerConfig, model_name: str = None) ->
         print(f"=== Resource Accounting for {model_name} ===")
     else:
         print("=== Resource Accounting ===")
-    
+
     params = model_params(config)
     total_flops = flops(config)
-    
+
     print(f"Total model params: {params:_}")
     print(f"Total FLOPs: {total_flops:_}")
-    print()
+    print("===================================")

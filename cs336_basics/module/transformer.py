@@ -24,8 +24,10 @@ class TransformerConfig:
     def __post_init__(self):
         print(f"TransformerConfig: {self}")
         if self.d_ff is None:
-            self.d_ff = int(8 * self.d_model / 3)
-            print(f"Setting d_ff to {self.d_ff}")
+            # Calculate base d_ff and round to nearest multiple of 64 for better GPU performance
+            base_d_ff = int(8 * self.d_model / 3)
+            self.d_ff = round(base_d_ff / 64) * 64
+            print(f"Setting d_ff to {self.d_ff} (rounded from {base_d_ff} to nearest multiple of 64)")
 
 
 class TransformerBlock(torch.nn.Module):
