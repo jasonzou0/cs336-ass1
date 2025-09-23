@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_checkpoint", help="Path to a checkpoint to load before training")
     parser.add_argument("--eval_data", help="Path to the evaluation dataset")
     parser.add_argument("--log_to_wandb", action="store_true", help="Whether to log training and evaluation metrics to Weights & Biases")
+    parser.add_argument("--learning_rate", type=float, default=1e-3, help="The peak learning rate for the optimizer (default: 1e-3)")
     args = parser.parse_args()
 
     validate_special_tokens(
@@ -53,7 +54,10 @@ if __name__ == "__main__":
         context_length=args.context_length,
         data_loading_mode=DataLoadingMode.RANDOM
     )
-    optimizer_config=OptimizerConfig(total_iters=args.iterations)
+    optimizer_config=OptimizerConfig(
+        total_iters=args.iterations,
+        learning_rate=args.learning_rate,
+    )
 
     print_resource_summary(model_config)
 

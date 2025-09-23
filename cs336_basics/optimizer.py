@@ -19,7 +19,7 @@ class OptimizerConfig:
     # The beta coefficients used for computing running averages of gradient and its square.
     betas: tuple[float, float] = (0.9, 0.999)
     # The final learning rate after cosine annealing.
-    min_learning_rate: float = 1e-5
+    min_learning_rate: float | None = None
     # Maximum L2 norm for gradient clipping.
     max_l2_norm: float = 1.0
 
@@ -31,6 +31,9 @@ class OptimizerConfig:
         if self.total_iters <= self.warmup_iters:
             raise ValueError("total_iters must be larger than warmup_iters, but got "
                              f"total_iters={self.total_iters} and warmup_iters={self.warmup_iters}")
+        if self.min_learning_rate is None:
+            self.min_learning_rate = self.learning_rate * 0.1
+            print(f"Setting min_learning_rate to {self.min_learning_rate}")
 
 
 def create_from_config(params, config: OptimizerConfig) -> tuple[torch.optim.Optimizer, "CosineScheduler"]:
