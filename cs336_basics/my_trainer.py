@@ -320,12 +320,12 @@ def run_train_bpe(
             a = b
     # Initialize id_to_bytes for single bytes
     id_to_bytes = [bytes([i]) for i in range(256)]
-    # Build initial heap: store (-freq, inverted bytes for tie-break, pair)
+    # Build initial heap: store (-freq, bytes for tie-break, pair) - no inversion for lexicographically smallest
     heap = []
     for pair, freq in pair_counts.items():
         a_bytes = id_to_bytes[pair[0]]
         b_bytes = id_to_bytes[pair[1]]
-        heapq.heappush(heap, (-freq, _invert_bytes_for_tie(a_bytes), _invert_bytes_for_tie(b_bytes), pair))
+        heapq.heappush(heap, (-freq, a_bytes, b_bytes, pair))
 
     #cur_time = time.time()
     #print(f"Processed pieces in {cur_time - previously_time} seconds")
@@ -383,8 +383,8 @@ def run_train_bpe(
                 {" (' ', 'w')": pair_counts.get(sw, 0), " ('n','d')": pair_counts.get(nd, 0),
                  " (' ', 'h')": pair_counts.get(sh, 0), " (' ', 'T')": pair_counts.get(sT, 0)}
             )
-        # Tie-break: pure lexicographic largest (bytes) among equals (original behavior)
-        best_pair = max(same_freq_valid, key=lambda p: (id_to_bytes[p[0]], id_to_bytes[p[1]]))
+        # Tie-break: pure lexicographic smallest (bytes) among equals (standard BPE behavior)
+        best_pair = min(same_freq_valid, key=lambda p: (id_to_bytes[p[0]], id_to_bytes[p[1]]))
         # Push back the other valid candidates at the same frequency
         for cand in same_freq_valid:
             if cand == best_pair:
@@ -393,7 +393,7 @@ def run_train_bpe(
             b_bytes = id_to_bytes[cand[1]]
             heapq.heappush(
                 heap,
-                (-top_freq, _invert_bytes_for_tie(a_bytes), _invert_bytes_for_tie(b_bytes), cand),
+                (-top_freq, a_bytes, b_bytes, cand),
             )
         new_bytes = id_to_bytes[best_pair[0]] + id_to_bytes[best_pair[1]]
         merges.append(best_pair)
@@ -426,7 +426,7 @@ def run_train_bpe(
                 b_bytes = id_to_bytes[p[1]]
                 heapq.heappush(
                     heap,
-                    (-f, _invert_bytes_for_tie(a_bytes), _invert_bytes_for_tie(b_bytes), p),
+                    (-f, a_bytes, b_bytes, p),
                 )
         merges_done += 1
 
