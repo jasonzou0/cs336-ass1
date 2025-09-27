@@ -64,8 +64,19 @@ class TransformerConfig:
         self.dropout = dropout
         self.bias = bias
         
-        # Validate configuration
-        assert self.d_model % self.num_heads == 0, "d_model must be divisible by num_heads"
+        # Auto-adjust num_heads if needed to ensure d_model is divisible
+        if self.d_model % self.num_heads != 0:
+            # Find the largest divisor of d_model that's <= num_heads
+            original_heads = self.num_heads
+            for candidate in range(self.num_heads, 0, -1):
+                if self.d_model % candidate == 0:
+                    self.num_heads = candidate
+                    break
+            print(f"Warning: Adjusted num_heads from {original_heads} to {self.num_heads} "
+                  f"to be compatible with d_model={self.d_model}")
+        
+        # Final validation
+        assert self.d_model % self.num_heads == 0, f"d_model ({self.d_model}) must be divisible by num_heads ({self.num_heads})"
 
 
 class TrainingConfig:
@@ -176,28 +187,67 @@ class SimpleTransformer(nn.Module):
     
     def forward(self, idx, targets=None):
         """Forward pass through the transformer"""
-        from tests.adapters import run_transformer_lm, run_cross_entropy
+        import torch.nn.functional as F
         
-        # Use our implemented transformer_lm function
-        logits = run_transformer_lm(
-            vocab_size=self.config.vocab_size,
-            context_length=self.config.context_length,
-            d_model=self.config.d_model,
-            num_layers=self.config.num_layers,
-            num_heads=self.config.num_heads,
-            d_ff=self.config.d_ff,
-            rope_theta=self.config.rope_theta,
-            weights=self.state_dict(),
-            in_indices=idx,
-        )
+        B, T = idx.shape
+        
+        # Token embeddings
+        x = self.token_embeddings(idx)  # (B, T, d_model)
+        
+        # Apply transformer layers
+        for layer in self.layers:
+            # Pre-norm architecture
+            # 1. Self-attention with residual connection
+            normed = layer['ln1'](x)
+            
+            # Multi-head self-attention (simplified implementation)
+            d_head = self.config.d_model // self.config.num_heads
+            q = layer['attn']['q_proj'](normed).view(B, T, self.config.num_heads, d_head).transpose(1, 2)
+            k = layer['attn']['k_proj'](normed).view(B, T, self.config.num_heads, d_head).transpose(1, 2)
+            v = layer['attn']['v_proj'](normed).view(B, T, self.config.num_heads, d_head).transpose(1, 2)
+            
+            # Scaled dot-product attention with causal mask
+            scores = torch.matmul(q, k.transpose(-2, -1)) / (d_head ** 0.5)
+            
+            # Causal mask
+            mask = torch.tril(torch.ones(T, T, device=idx.device, dtype=torch.bool))
+            scores = scores.masked_fill(~mask, float('-inf'))
+            
+            attn_weights = F.softmax(scores, dim=-1)
+            attn_output = torch.matmul(attn_weights, v)
+            
+            # Reshape and project
+            attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, self.config.d_model)
+            attn_output = layer['attn']['output_proj'](attn_output)
+            
+            # Residual connection
+            x = x + attn_output
+            
+            # 2. Feed-forward with residual connection
+            normed = layer['ln2'](x)
+            
+            # SwiGLU: SiLU(W1 * x) * W3 * x -> W2
+            gate = F.silu(layer['ffn']['w1'](normed))
+            up = layer['ffn']['w3'](normed)
+            ffn_output = layer['ffn']['w2'](gate * up)
+            
+            # Residual connection
+            x = x + ffn_output
+        
+        # Final layer norm
+        x = self.ln_final(x)
+        
+        # Language model head
+        logits = self.lm_head(x)  # (B, T, vocab_size)
         
         loss = None
         if targets is not None:
-            # Compute cross-entropy loss for each position
+            # Compute cross-entropy loss
             B, T, C = logits.shape
-            loss = run_cross_entropy(
+            loss = F.cross_entropy(
                 logits.view(B * T, C),
-                targets.view(B * T)
+                targets.view(B * T),
+                ignore_index=-1
             )
         
         return logits, loss
@@ -261,8 +311,8 @@ def main():
     parser.add_argument('--grad-clip', type=float, default=1.0)
     
     # Data and logging
-    parser.add_argument('--data-path', type=str, required=True, help='Path to training data')
-    parser.add_argument('--val-data-path', type=str, help='Path to validation data')
+    parser.add_argument('--data-path', type=str, required=True, help='Path to training data', default='data/train.bin')
+    parser.add_argument('--val-data-path', type=str, help='Path to validation data', default='data/TinyStoriesV2-GPT4-valid.txt')
     parser.add_argument('--out-dir', type=str, default='./checkpoints', help='Output directory for checkpoints')
     parser.add_argument('--eval-interval', type=int, default=1000)
     parser.add_argument('--log-interval', type=int, default=100)
@@ -341,11 +391,15 @@ def main():
     print("Loading data...")
     train_data = load_data(train_config.data_path)
     val_data = None
-    if train_config.val_data_path:
-        val_data = load_data(train_config.val_data_path)
+    if train_config.val_data_path and os.path.exists(train_config.val_data_path):
+        try:
+            val_data = load_data(train_config.val_data_path)
+            print(f"Loaded validation data: {len(val_data):,} tokens")
+        except Exception as e:
+            print(f"Warning: Could not load validation data from {train_config.val_data_path}: {e}")
+            print("Continuing with training data only...")
+            val_data = None
     print(f"Loaded training data: {len(train_data):,} tokens")
-    if val_data is not None:
-        print(f"Loaded validation data: {len(val_data):,} tokens")
     
     # Create model
     print("Creating model...")
@@ -402,8 +456,11 @@ def main():
                 train_config.eval_iters, train_config.batch_size, 
                 model_config.context_length, device
             )
-            print(f"Step {iter_num}: train loss {losses.get('train', 'N/A'):.4f}, "
-                  f"val loss {losses.get('val', 'N/A'):.4f}")
+            train_loss = losses.get('train', None)
+            val_loss = losses.get('val', None)
+            train_loss_str = f"{train_loss:.4f}" if train_loss is not None else "N/A"
+            val_loss_str = f"{val_loss:.4f}" if val_loss is not None else "N/A"
+            print(f"Step {iter_num}: train loss {train_loss_str}, val loss {val_loss_str}")
         
         # Sample batch
         X, Y = run_get_batch(train_data, train_config.batch_size, model_config.context_length, device)
