@@ -31,12 +31,23 @@ def train_bpe_tokenizer(text_file: str, vocab_size: int, output_dir: str):
     vocab_file = os.path.join(output_dir, "vocab.json")
     
     # Train BPE tokenizer
-    run_train_bpe(
-        input_file=text_file,
+    special_tokens = ["<|endoftext|>"]  # Common special token for language models
+    vocab, merges = run_train_bpe(
+        input_path=text_file,
         vocab_size=vocab_size,
-        merges_file=merges_file,
-        vocab_file=vocab_file
+        special_tokens=special_tokens
     )
+    
+    # Save vocabulary
+    vocab_dict = {token_id: token.decode('utf-8', errors='ignore') for token_id, token in vocab.items()}
+    with open(vocab_file, 'w', encoding='utf-8') as f:
+        json.dump(vocab_dict, f, ensure_ascii=False, indent=2)
+    
+    # Save merges
+    with open(merges_file, 'w', encoding='utf-8') as f:
+        for merge_pair in merges:
+            token1, token2 = merge_pair
+            f.write(f"{token1.decode('utf-8', errors='ignore')} {token2.decode('utf-8', errors='ignore')}\n")
     
     return vocab_file, merges_file
 

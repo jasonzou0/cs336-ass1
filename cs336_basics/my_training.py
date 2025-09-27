@@ -19,9 +19,15 @@ import argparse
 import json
 import math
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+# Add project root to Python path for imports
+current_dir = Path(__file__).resolve().parent
+project_root = current_dir.parent
+sys.path.insert(0, str(project_root))
 
 import numpy as np
 import torch
@@ -320,7 +326,7 @@ def main():
     parser.add_argument('--eval-iters', type=int, default=200)
     
     # System
-    parser.add_argument('--device', type=str, default='auto')
+    parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--compile', action='store_true', help='Compile model with torch.compile')
     parser.add_argument('--resume', type=str, help='Resume from checkpoint')
     
