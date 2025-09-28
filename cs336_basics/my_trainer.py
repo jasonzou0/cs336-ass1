@@ -383,8 +383,8 @@ def run_train_bpe(
                 {" (' ', 'w')": pair_counts.get(sw, 0), " ('n','d')": pair_counts.get(nd, 0),
                  " (' ', 'h')": pair_counts.get(sh, 0), " (' ', 'T')": pair_counts.get(sT, 0)}
             )
-        # Tie-break: pure lexicographic smallest (bytes) among equals (standard BPE behavior)
-        best_pair = min(same_freq_valid, key=lambda p: (id_to_bytes[p[0]], id_to_bytes[p[1]]))
+        # Tie-break: pure lexicographic largest (bytes) among equals (to match reference)
+        best_pair = max(same_freq_valid, key=lambda p: (id_to_bytes[p[0]], id_to_bytes[p[1]]))
         # Push back the other valid candidates at the same frequency
         for cand in same_freq_valid:
             if cand == best_pair:
