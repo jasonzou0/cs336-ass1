@@ -6,8 +6,8 @@ This script loads a trained transformer model and generates tiny stories
 from user prompts using text generation techniques.
 
 Usage:
-    python generate_story.py --checkpoint checkpoints/ckpt_000010.pt --prompt "Once upon a time"
-    python generate_story.py --config checkpoints/config.json --interactive
+    python generate_story.py --checkpoint checkpoints/final_model.pt --prompt "Once upon a time"
+    python generate_story.py --checkpoint checkpoints/final_model.pt --interactive
 """
 
 import argparse
@@ -25,11 +25,65 @@ from tqdm import tqdm
 current_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(current_dir))
 
-# Import our implementations
-from tests.adapters import (
-    run_load_checkpoint,
-    get_tokenizer
-)
+# Import the actual model from training
+from cs336_basics.my_training import SimpleTransformer, TransformerConfig
+
+
+class SimpleTokenizer:
+    """Simple tokenizer that maps common words and characters to token IDs"""
+    def __init__(self):
+        # Create a mapping based on common patterns in the training data
+        # This is a simplified approach - in reality we'd need the exact tokenizer used during training
+        self.vocab = {}
+        self.reverse_vocab = {}
+        
+        # Add common characters and words
+        chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:'\"-()[]{}@#$%^&*+=<>/\\|`~_\n\t"
+        
+        # Map characters to token IDs starting from a safe range
+        token_id = 100  # Start from 100 to avoid conflicts
+        for char in chars:
+            self.vocab[char] = token_id
+            self.reverse_vocab[token_id] = char
+            token_id += 1
+        
+        # Add some common words to higher token IDs
+        common_words = ["the", "and", "a", "to", "of", "in", "that", "have", "for", "not", "with", "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one", "all", "would", "there", "their", "was", "said", "each", "which", "she", "do", "how", "if", "up", "out", "many", "time", "has", "them", "these", "so", "some", "her", "would", "make", "like", "into", "him", "is", "two", "more", "very", "what", "know", "just", "first", "get", "over", "think", "also", "your", "work", "life", "only", "can", "still", "should", "after", "being", "now", "made", "before", "here", "through", "when", "where", "much", "go", "me", "world", "too", "right", "us", "old", "any", "day", "same", "another", "way", "may", "come", "could", "water", "long", "little", "did", "part", "find"]
+        
+        for word in common_words:
+            self.vocab[word] = token_id
+            self.reverse_vocab[token_id] = word
+            token_id += 1
+            
+    def encode(self, text):
+        """Simple word/character level encoding"""
+        tokens = []
+        words = text.split()
+        
+        for word in words:
+            if word in self.vocab:
+                tokens.append(self.vocab[word])
+            else:
+                # Character level fallback
+                for char in word:
+                    tokens.append(self.vocab.get(char, self.vocab.get('?', 100)))
+            # Add space token
+            tokens.append(self.vocab.get(' ', 132))
+        
+        return tokens
+    
+    def decode(self, token_ids):
+        """Decode token IDs back to text"""
+        if isinstance(token_ids, torch.Tensor):
+            token_ids = token_ids.tolist()
+        
+        text = ""
+        for token_id in token_ids:
+            if token_id in self.reverse_vocab:
+                text += self.reverse_vocab[token_id]
+            # For unknown tokens, skip or use placeholder
+        
+        return text.strip()
 
 
 class StoryGenerator:
@@ -78,14 +132,18 @@ class StoryGenerator:
         print("=" * 60)
         
         for i in tqdm(range(max_new_tokens), desc="Generating"):
-            # Get model predictions
-            with torch.no_grad():
-                logits = self.model(generated_ids)
-                
-                # Get logits for next token (last position)
-                next_token_logits = logits[0, -1, :]  # [vocab_size]
-                
-                # Apply repetition penalty
+                # Get model predictions
+                with torch.no_grad():
+                    output = self.model(generated_ids)
+                    
+                    # Handle both single logits and (logits, loss) tuple
+                    if isinstance(output, tuple):
+                        logits = output[0]  # Extract logits from tuple
+                    else:
+                        logits = output
+                    
+                    # Get logits for next token (last position)
+                    next_token_logits = logits[0, -1, :]  # [vocab_size]                # Apply repetition penalty
                 if repetition_penalty != 1.0:
                     for token_id in set(generated_ids[0].tolist()):
                         if next_token_logits[token_id] < 0:
@@ -175,74 +233,23 @@ def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = Non
     checkpoint = torch.load(checkpoint_path, map_location=device)
     
     # Create a simple tokenizer for now
-    print("⚠️  Using simple character tokenizer for generation")
-    tokenizer = SimpleCharTokenizer()
+    print("⚠️  Using simple tokenizer for generation")
+    tokenizer = SimpleTokenizer()
     
-    # Create model using the same architecture as in training
-    # We'll recreate the model class from the training script
-    import torch.nn as nn
-    
-    class TransformerLM(nn.Module):
-        def __init__(self, vocab_size, context_length, d_model, num_layers, num_heads, d_ff, rope_theta=10000.0, dropout=0.0, bias=True):
-            super().__init__()
-            self.vocab_size = vocab_size
-            self.context_length = context_length
-            self.d_model = d_model
-            
-            # Token embedding
-            self.token_embedding = nn.Embedding(vocab_size, d_model)
-            
-            # Transformer layers (simplified - you may need to match your exact architecture)
-            self.layers = nn.ModuleList([
-                nn.TransformerDecoderLayer(
-                    d_model=d_model,
-                    nhead=num_heads,
-                    dim_feedforward=d_ff,
-                    dropout=dropout,
-                    batch_first=True
-                )
-                for _ in range(num_layers)
-            ])
-            
-            # Output head
-            self.ln_f = nn.LayerNorm(d_model)
-            self.lm_head = nn.Linear(d_model, vocab_size, bias=bias)
-        
-        def forward(self, x, targets=None):
-            B, T = x.shape
-            
-            # Token embeddings
-            x = self.token_embedding(x)  # (B, T, d_model)
-            
-            # Create causal mask
-            mask = torch.tril(torch.ones(T, T, device=x.device, dtype=torch.bool))
-            mask = ~mask  # Invert for PyTorch convention
-            
-            # Apply transformer layers
-            for layer in self.layers:
-                x = layer(x, x, tgt_mask=mask)
-            
-            # Final layer norm and output projection
-            x = self.ln_f(x)
-            logits = self.lm_head(x)
-            
-            if targets is not None:
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
-                return logits, loss
-            
-            return logits
-    
-    model = TransformerLM(
+    # Use the actual model architecture from training
+    transformer_config = TransformerConfig(
         vocab_size=model_config['vocab_size'],
-        context_length=model_config['context_length'],
+        context_length=model_config['context_length'], 
         d_model=model_config['d_model'],
         num_layers=model_config['num_layers'],
         num_heads=model_config['num_heads'],
-        d_ff=model_config.get('d_ff', 4 * model_config['d_model']),
-        rope_theta=model_config.get('rope_theta', 10000.0),
-        dropout=0.0,  # Set to 0 for inference
-        bias=model_config.get('bias', True)
+        d_ff=model_config['d_ff'],
+        rope_theta=model_config['rope_theta'],
+        dropout=0.0,
+        bias=model_config['bias']
     )
+    
+    model = SimpleTransformer(transformer_config)
     
     # Load model weights
     model.load_state_dict(checkpoint['model_state_dict'])

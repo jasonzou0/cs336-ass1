@@ -318,7 +318,7 @@ def main():
     
     # Data and logging
     parser.add_argument('--data-path', type=str, required=True, help='Path to training data', default='data/train.bin')
-    parser.add_argument('--val-data-path', type=str, help='Path to validation data', default='data/TinyStoriesV2-GPT4-valid.txt')
+    parser.add_argument('--val-data-path', type=str, help='Path to validation data', default='data/valid.bin')
     parser.add_argument('--out-dir', type=str, default='./checkpoints', help='Output directory for checkpoints')
     parser.add_argument('--eval-interval', type=int, default=1000)
     parser.add_argument('--log-interval', type=int, default=100)

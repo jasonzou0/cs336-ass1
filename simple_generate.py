@@ -26,21 +26,52 @@ except ImportError:
     print("❌ Could not import model from training script")
     sys.exit(1)
 
-class SimpleCharTokenizer:
-    """Simple character-level tokenizer"""
-    def __init__(self):
-        # Create a simple character vocabulary  
-        chars = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:'\"-()[]{}@#$%^&*+=<>/\\|`~_\n")
-        self.char_to_id = {char: i for i, char in enumerate(chars)}
-        self.id_to_char = {i: char for i, char in enumerate(chars)}
-        self.vocab_size = len(chars)
-        self.eos_token_id = len(chars) - 1  # Use newline as EOS
+def load_bpe_tokenizer():
+    """Load the BPE tokenizer used during training"""
+    from cs336_basics.my_tokenizer import BpeTokenizer
     
-    def encode(self, text: str) -> list[int]:
-        return [self.char_to_id.get(char, 0) for char in text]
+    vocab_file = 'data/tokenizer/vocab.json'
+    merges_file = 'data/tokenizer/merges.txt'
     
-    def decode(self, token_ids: list[int]) -> str:
-        return ''.join(self.id_to_char.get(id, '') for id in token_ids)
+    # Load vocabulary
+    with open(vocab_file, 'r', encoding='utf-8') as f:
+        vocab_dict = json.load(f)
+    
+    # Convert vocab back to the format expected by BpeTokenizer
+    id_to_bytes = {}
+    for k, v in vocab_dict.items():
+        token_id = int(k)
+        if token_id < 256:
+            # Base bytes: convert back to single byte
+            try:
+                # Try latin-1 first (for proper base bytes)
+                id_to_bytes[token_id] = v.encode('latin-1')
+            except UnicodeEncodeError:
+                # Fallback: if it's a replacement character, use the token_id as byte value
+                id_to_bytes[token_id] = bytes([token_id])
+        else:
+            # Merged tokens and special tokens: use UTF-8
+            id_to_bytes[token_id] = v.encode('utf-8')
+    
+    # Load merges
+    with open(merges_file, 'r', encoding='utf-8') as f:
+        merges_lines = f.read().strip().split('\n')
+    
+    # Convert merges back to tuple format
+    merges = []
+    for line in merges_lines:
+        if line.strip():
+            parts = line.split(' ', 1)
+            if len(parts) == 2:
+                merges.append((parts[0].encode('utf-8'), parts[1].encode('utf-8')))
+    
+    tokenizer = BpeTokenizer(
+        id_to_bytes=id_to_bytes,
+        merges=merges,
+        special_tokens=['<|endoftext|>']
+    )
+    
+    return tokenizer
 
 @torch.no_grad()
 def generate_text(model, tokenizer, prompt: str, max_new_tokens: int = 200, temperature: float = 0.8, device='cuda'):
@@ -74,9 +105,8 @@ def generate_text(model, tokenizer, prompt: str, max_new_tokens: int = 200, temp
         probs = F.softmax(next_logits, dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
         
-        # Check for stopping conditions
-        if next_token.item() == tokenizer.eos_token_id:
-            break
+        # Check for stopping conditions (optional since BPE doesn't have explicit EOS)
+        # We'll just continue until max_new_tokens
         
         # Append to sequence
         generated = torch.cat([generated, next_token.unsqueeze(0)], dim=1)
@@ -142,9 +172,9 @@ def main():
     
     print(f"✅ Model loaded on {device}")
     
-    # Create simple tokenizer
-    tokenizer = SimpleCharTokenizer()
-    print(f"⚠️  Using simple character tokenizer (vocab_size={tokenizer.vocab_size})")
+    # Load the actual BPE tokenizer
+    tokenizer = load_bpe_tokenizer()
+    print(f"✅ Using BPE tokenizer (vocab_size={len(tokenizer.id_to_bytes)})")
     
     # Generate story
     try:
