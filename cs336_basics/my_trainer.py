@@ -453,9 +453,21 @@ def run_train_bpe(
     #print(f"Appended special tokens in {cur_time - previously_time} seconds")
     #previously_time = cur_time
     # If we overshot (due to duplicate merged tokens), trim or pad as needed.
-    # Prefer trimming merged tokens at the end to match requested vocab_size.
+    # IMPORTANT: Always preserve all 256 base bytes (0-255) and special tokens
     if len(tokens) > vocab_size:
-        tokens = tokens[:vocab_size]
+        # Keep base bytes (0-255) and special tokens, trim only merged tokens
+        base_and_special = tokens[:256]  # Base bytes
+        for tok in special_tokens:
+            base_and_special.append(tok.encode("utf-8"))
+        
+        # Add as many merged tokens as possible within vocab_size
+        merged_tokens = tokens[256:-len(special_tokens)]  # Exclude base bytes and special tokens
+        remaining_slots = vocab_size - len(base_and_special)
+        
+        if remaining_slots > 0 and merged_tokens:
+            base_and_special.extend(merged_tokens[:remaining_slots])
+        
+        tokens = base_and_special
     cur_time = time.time()
     print(f"Trimmed/Padded vocab in {cur_time - previously_time} seconds")
     # Stop and save profiling

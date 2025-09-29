@@ -54,21 +54,45 @@ def train_bpe_tokenizer(text_file: str, vocab_size: int, output_dir: str):
 
 def load_bpe_tokenizer(vocab_file: str, merges_file: str):
     """Load trained BPE tokenizer"""
-    from cs336_basics.my_tokenizer import Tokenizer
-    
-    tokenizer = Tokenizer()
+    from cs336_basics.my_tokenizer import BpeTokenizer
     
     # Load vocabulary
     with open(vocab_file, 'r', encoding='utf-8') as f:
-        vocab = json.load(f)
+        vocab_dict = json.load(f)
+    
+    # Convert vocab back to the format expected by BpeTokenizer
+    id_to_bytes = {}
+    for k, v in vocab_dict.items():
+        token_id = int(k)
+        if token_id < 256:
+            # Base bytes: convert back to single byte
+            try:
+                # Try latin-1 first (for proper base bytes)
+                id_to_bytes[token_id] = v.encode('latin-1')
+            except UnicodeEncodeError:
+                # Fallback: if it's a replacement character, use the token_id as byte value
+                id_to_bytes[token_id] = bytes([token_id])
+        else:
+            # Merged tokens and special tokens: use UTF-8
+            id_to_bytes[token_id] = v.encode('utf-8')
     
     # Load merges
     with open(merges_file, 'r', encoding='utf-8') as f:
         merges_lines = f.read().strip().split('\n')
     
-    # Set up tokenizer (this is a simplified version - you may need to adjust based on your tokenizer implementation)
-    tokenizer.vocab = vocab
-    tokenizer.merges = merges_lines
+    # Convert merges back to tuple format
+    merges = []
+    for line in merges_lines:
+        if line.strip():
+            parts = line.split(' ', 1)
+            if len(parts) == 2:
+                merges.append((parts[0].encode('utf-8'), parts[1].encode('utf-8')))
+    
+    tokenizer = BpeTokenizer(
+        id_to_bytes=id_to_bytes,
+        merges=merges,
+        special_tokens=['<|endoftext|>']
+    )
     
     return tokenizer
 
@@ -211,13 +235,13 @@ def main():
                     print(f"Error: vocab.json or merges.txt not found in {args.reuse_tokenizer}")
                     return 1
             else:
-                # Train new tokenizer
-                tokenizer_dir = os.path.join(output_dir, 'tokenizer')
-                os.makedirs(tokenizer_dir, exist_ok=True)
-                
-                vocab_file, merges_file = train_bpe_tokenizer(
-                    args.input, args.vocab_size, tokenizer_dir
-                )
+                # prompt user to train new tokenizer with generate_full_bpe.py
+                print("No existing tokenizer provided. Please train a new BPE tokenizer using generate_full_bpe.py")
+                # prompt user to use reuse-tokenizer to reuse an existing tokenizer
+                print("Alternatively, you can use --reuse-tokenizer to reuse an existing tokenizer.")
+                return 1
+
+
             
             # Load tokenizer and tokenize
             try:
