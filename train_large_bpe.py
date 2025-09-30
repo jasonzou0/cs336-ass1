@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Train BPE tokenizer with vocab_size=50257 to match the model architecture
+Train BPE tokenizer with configurable vocab_size (default: 50257 to match the model architecture)
 """
 
 import os
 import json
+import argparse
 from tests.adapters import run_train_bpe
 
-def train_large_bpe_tokenizer():
-    """Train BPE tokenizer with vocab_size=50257"""
+def train_large_bpe_tokenizer(vocab_size=50257):
+    """Train BPE tokenizer with configurable vocab_size (default: 50257)"""
     
     # Input data file
     input_file = "data/TinyStoriesV2-GPT4-train.txt"
@@ -17,11 +18,14 @@ def train_large_bpe_tokenizer():
         print(f"❌ Input file not found: {input_file}")
         return
     
-    # Output directory
-    output_dir = "data/tokenizer_50k"
+    # Output directory (adjust name based on vocab size)
+    if vocab_size == 50257:
+        output_dir = "data/tokenizer_50k"
+    else:
+        output_dir = f"data/tokenizer_{vocab_size}"
     os.makedirs(output_dir, exist_ok=True)
     
-    print("🔄 Training BPE tokenizer with vocab_size=50257...")
+    print(f"🔄 Training BPE tokenizer with vocab_size={vocab_size}...")
     print(f"Input: {input_file}")
     print(f"Output: {output_dir}")
     
@@ -29,7 +33,7 @@ def train_large_bpe_tokenizer():
     special_tokens = ["<|endoftext|>"]
     vocab, merges = run_train_bpe(
         input_path=input_file,
-        vocab_size=50257,  # Match model vocabulary size
+        vocab_size=vocab_size,
         special_tokens=special_tokens
     )
     
@@ -76,15 +80,36 @@ def train_large_bpe_tokenizer():
     
     return vocab_file, merges_file
 
-if __name__ == "__main__":
+def main():
+    """Main function with command line argument parsing"""
+    parser = argparse.ArgumentParser(description="Train BPE tokenizer with configurable vocabulary size")
+    parser.add_argument(
+        "--vocab-size", 
+        type=int, 
+        default=50257, 
+        help="Vocabulary size for the BPE tokenizer (default: 50257)"
+    )
+    
+    args = parser.parse_args()
+    
     try:
-        vocab_file, merges_file = train_large_bpe_tokenizer()
+        vocab_file, merges_file = train_large_bpe_tokenizer(vocab_size=args.vocab_size)
         print("\n🎉 BPE tokenizer training completed successfully!")
         print(f"📁 Vocabulary: {vocab_file}")
         print(f"📁 Merges: {merges_file}")
+        
+        # Adjust the output directory name in the usage example
+        if args.vocab_size == 50257:
+            tokenizer_dir = "data/tokenizer_50k"
+        else:
+            tokenizer_dir = f"data/tokenizer_{args.vocab_size}"
+            
         print("\nYou can now use this tokenizer with:")
-        print("python prepare_data.py --method bpe --reuse-tokenizer data/tokenizer_50k")
+        print(f"python prepare_data.py --method bpe --reuse-tokenizer {tokenizer_dir}")
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
+
+if __name__ == "__main__":
+    main()

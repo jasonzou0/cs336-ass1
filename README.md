@@ -48,3 +48,16 @@ gunzip owt_valid.txt.gz
 cd ..
 ```
 
+### Train BPE
+``` bash
+uv run python train_large_bpe.py --vocab-size 10000
+```
+will save the training bpe to data/tokenizer_50k 
+
+### Tokenize doc
+``` bash
+python prepare_data.py --method bpe --reuse-tokenizer data/tokenizer_50k
+python prepare_data.py --input data/TinyStoriesV2-GPT4-train.txt --method bpe --reuse-tokenizer data/tokenizer_10000 --output data/train.bin
+python prepare_data.py --input data/TinyStoriesV2-GPT4-valid.txt --method bpe --reuse-tokenizer data/tokenizer_10000 --output data/val.bin
+```
+will use data/tokenizer_50k to tokenize data/TinyStoriesV2-GPT4-train.txt

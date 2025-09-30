@@ -286,13 +286,29 @@ def run_train_bpe(
     #print(f"Read corpus in {cur_time - previously_time} seconds")
     #previously_time = cur_time
     # --- build sequences of symbols (bytes) per GPT-2 piece ---
-    # Remove occurrences of special token strings from the corpus to avoid
-    # learning merges from their internals (e.g., "<|", "oftext", "|>").
-    # This keeps specials isolated in the final vocab.
+    # Split on special tokens to prevent merging across document boundaries
+    # This follows the CS336 guideline for proper special token handling
     if special_tokens:
-        for st in special_tokens:
-            text = text.replace(st, "")
-    pieces = (m.group(0) for m in GPT2_PAT.finditer(text))
+        # Create regex pattern to split on special tokens
+        import re as std_re
+        escaped_specials = [std_re.escape(st) for st in special_tokens]
+        split_pattern = "|".join(escaped_specials)
+        text_chunks = std_re.split(split_pattern, text)
+        # Filter out empty chunks
+        text_chunks = [chunk for chunk in text_chunks if chunk.strip()]
+    else:
+        text_chunks = [text]
+    
+    # Process each chunk separately to ensure no merging across special token boundaries
+    # Use simple whitespace splitting as specified in CS336 assignment guideline
+    all_pieces = []
+    for chunk in text_chunks:
+        if chunk.strip():  # Skip empty chunks
+            # Simple whitespace splitting (not GPT-2 regex)
+            chunk_pieces = chunk.split()
+            all_pieces.extend(chunk_pieces)
+    
+    pieces = all_pieces
     # Build unique sequences with counts (weights)
     seq_counter: Dict[Tuple[int, ...], int] = {}
     for piece in pieces:
