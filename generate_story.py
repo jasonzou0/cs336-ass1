@@ -29,61 +29,53 @@ sys.path.insert(0, str(current_dir))
 from cs336_basics.my_training import SimpleTransformer, TransformerConfig
 
 
-class SimpleTokenizer:
-    """Simple tokenizer that maps common words and characters to token IDs"""
-    def __init__(self):
-        # Create a mapping based on common patterns in the training data
-        # This is a simplified approach - in reality we'd need the exact tokenizer used during training
-        self.vocab = {}
-        self.reverse_vocab = {}
-        
-        # Add common characters and words
-        chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:'\"-()[]{}@#$%^&*+=<>/\\|`~_\n\t"
-        
-        # Map characters to token IDs starting from a safe range
-        token_id = 100  # Start from 100 to avoid conflicts
-        for char in chars:
-            self.vocab[char] = token_id
-            self.reverse_vocab[token_id] = char
-            token_id += 1
-        
-        # Add some common words to higher token IDs
-        common_words = ["the", "and", "a", "to", "of", "in", "that", "have", "for", "not", "with", "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one", "all", "would", "there", "their", "was", "said", "each", "which", "she", "do", "how", "if", "up", "out", "many", "time", "has", "them", "these", "so", "some", "her", "would", "make", "like", "into", "him", "is", "two", "more", "very", "what", "know", "just", "first", "get", "over", "think", "also", "your", "work", "life", "only", "can", "still", "should", "after", "being", "now", "made", "before", "here", "through", "when", "where", "much", "go", "me", "world", "too", "right", "us", "old", "any", "day", "same", "another", "way", "may", "come", "could", "water", "long", "little", "did", "part", "find"]
-        
-        for word in common_words:
-            self.vocab[word] = token_id
-            self.reverse_vocab[token_id] = word
-            token_id += 1
-            
-    def encode(self, text):
-        """Simple word/character level encoding"""
-        tokens = []
-        words = text.split()
-        
-        for word in words:
-            if word in self.vocab:
-                tokens.append(self.vocab[word])
-            else:
-                # Character level fallback
-                for char in word:
-                    tokens.append(self.vocab.get(char, self.vocab.get('?', 100)))
-            # Add space token
-            tokens.append(self.vocab.get(' ', 132))
-        
-        return tokens
+# Import your custom tokenizer
+from cs336_basics.my_tokenizer import BpeTokenizer
+
+
+def load_bpe_tokenizer(vocab_file: str, merges_file: str):
+    """Load trained BPE tokenizer from vocab and merges files"""
+    import json
     
-    def decode(self, token_ids):
-        """Decode token IDs back to text"""
-        if isinstance(token_ids, torch.Tensor):
-            token_ids = token_ids.tolist()
-        
-        text = ""
-        for token_id in token_ids:
-            if token_id in self.reverse_vocab:
-                text += self.reverse_vocab[token_id]
-            # For unknown tokens, skip or use placeholder
-        
-        return text.strip()
+    # Load vocabulary
+    with open(vocab_file, 'r', encoding='utf-8') as f:
+        vocab_dict = json.load(f)
+    
+    # Convert vocab back to the format expected by BpeTokenizer
+    id_to_bytes = {}
+    for k, v in vocab_dict.items():
+        token_id = int(k)
+        if token_id < 256:
+            # Base bytes: convert back to single byte
+            try:
+                # Try latin-1 first (for proper base bytes)
+                id_to_bytes[token_id] = v.encode('latin-1')
+            except UnicodeEncodeError:
+                # Fallback: if it's a replacement character, use the token_id as byte value
+                id_to_bytes[token_id] = bytes([token_id])
+        else:
+            # Merged tokens and special tokens: use UTF-8
+            id_to_bytes[token_id] = v.encode('utf-8')
+    
+    # Load merges
+    with open(merges_file, 'r', encoding='utf-8') as f:
+        merges_lines = f.read().strip().split('\n')
+    
+    # Convert merges back to tuple format
+    merges = []
+    for line in merges_lines:
+        if line.strip():
+            parts = line.split(' ', 1)
+            if len(parts) == 2:
+                merges.append((parts[0].encode('utf-8'), parts[1].encode('utf-8')))
+    
+    tokenizer = BpeTokenizer(
+        id_to_bytes=id_to_bytes,
+        merges=merges,
+        special_tokens=['<|endoftext|>']
+    )
+    
+    return tokenizer
 
 
 class StoryGenerator:
@@ -205,7 +197,7 @@ class StoryGenerator:
         return False
 
 
-def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = None):
+def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = None, tokenizer_path: Optional[str] = None):
     """Load trained model and configuration"""
     
     # Load configuration
@@ -232,9 +224,48 @@ def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = Non
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     checkpoint = torch.load(checkpoint_path, map_location=device)
     
-    # Create a simple tokenizer for now
-    print("⚠️  Using simple tokenizer for generation")
-    tokenizer = SimpleTokenizer()
+    # Load the BPE tokenizer used during training
+    vocab_file = None
+    merges_file = None
+    
+    if tokenizer_path:
+        # Use explicitly provided tokenizer path
+        if os.path.exists(tokenizer_path):
+            vocab_file = os.path.join(tokenizer_path, 'vocab.json')
+            merges_file = os.path.join(tokenizer_path, 'merges.txt')
+    else:
+        # Auto-detect tokenizer files
+        checkpoint_dir = os.path.dirname(os.path.abspath(checkpoint_path))
+        
+        # Check for tokenizer subdirectory
+        tokenizer_dirs = [
+            os.path.join(checkpoint_dir, 'tokenizer'),
+            os.path.join(checkpoint_dir, '..', 'tokenizer'),
+            os.path.join(checkpoint_dir, '..', 'data', 'tokenizer_50k'),
+            os.path.join(checkpoint_dir, '..', 'data', 'tokenizer_10000'),
+            'data/tokenizer_50k',
+            'data/tokenizer_10000',
+        ]
+        
+        for tokenizer_dir in tokenizer_dirs:
+            if os.path.exists(tokenizer_dir):
+                potential_vocab = os.path.join(tokenizer_dir, 'vocab.json')
+                potential_merges = os.path.join(tokenizer_dir, 'merges.txt')
+                if os.path.exists(potential_vocab) and os.path.exists(potential_merges):
+                    vocab_file = potential_vocab
+                    merges_file = potential_merges
+                    break
+    
+    if vocab_file and merges_file and os.path.exists(vocab_file) and os.path.exists(merges_file):
+        print(f"📚 Loading BPE tokenizer from:")
+        print(f"  Vocab: {vocab_file}")
+        print(f"  Merges: {merges_file}")
+        tokenizer = load_bpe_tokenizer(vocab_file, merges_file)
+    else:
+        print("⚠️  BPE tokenizer files not found, using fallback character tokenizer")
+        print("   Please ensure vocab.json and merges.txt are available")
+        print("   Use --tokenizer argument to specify tokenizer directory")
+        tokenizer = SimpleCharTokenizer()
     
     # Use the actual model architecture from training
     transformer_config = TransformerConfig(
@@ -335,6 +366,8 @@ def main():
                        help='Path to model checkpoint (.pt file)')
     parser.add_argument('--config', type=str, 
                        help='Path to config.json (auto-detected if not provided)')
+    parser.add_argument('--tokenizer', type=str,
+                       help='Path to tokenizer directory (containing vocab.json and merges.txt)')
     parser.add_argument('--prompt', type=str, 
                        help='Text prompt for story generation')
     parser.add_argument('--interactive', action='store_true',
@@ -358,7 +391,7 @@ def main():
     try:
         # Load model
         print("🔄 Loading trained model...")
-        model, tokenizer, config = load_model_and_config(args.checkpoint, args.config)
+        model, tokenizer, config = load_model_and_config(args.checkpoint, args.config, args.tokenizer)
         
         # Create generator
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
