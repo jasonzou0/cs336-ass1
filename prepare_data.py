@@ -2,12 +2,12 @@
 """
 Data preparation script for CS336 training
 
-This script tokenizes text files and converts them to binary format
-expected by the training script.
+This script tokenizes text files using BPE tokenization and converts them 
+to binary format expected by the training script.
 
 Usage:
-    python prepare_data.py --input data/TinyStoriesV2-GPT4-train.txt --output data/train.bin --vocab-size 50000
-    python prepare_data.py --input data/owt_train.txt --output data/train.bin --vocab-size 50000
+    python prepare_data.py --input data/TinyStoriesV2-GPT4-train.txt --output data/train.bin --reuse-tokenizer data/tokenizer
+    python prepare_data.py --input data/TinyStoriesV2-GPT4-valid.txt --output data/valid.bin --reuse-tokenizer data/tokenizer
 """
 
 import argparse
@@ -151,53 +151,7 @@ def tokenize_file(input_file: str, tokenizer, output_file: str, chunk_size: int 
     return len(tokens_array)
 
 
-def simple_whitespace_tokenize(input_file: str, output_file: str, max_vocab_size: int = 50000):
-    """Simple whitespace tokenization as fallback"""
-    print(f"Using simple whitespace tokenization for {input_file}")
-    
-    # Build vocabulary
-    print("Building vocabulary...")
-    word_counts = {}
-    
-    with open(input_file, 'r', encoding='utf-8') as f:
-        for line in tqdm(f, desc="Counting words"):
-            words = line.strip().split()
-            for word in words:
-                word_counts[word] = word_counts.get(word, 0) + 1
-    
-    # Get most frequent words
-    sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
-    vocab_words = [word for word, count in sorted_words[:max_vocab_size-4]]  # Reserve space for special tokens
-    
-    # Add special tokens
-    special_tokens = ['<pad>', '<unk>', '<bos>', '<eos>']
-    vocab = {token: i for i, token in enumerate(special_tokens + vocab_words)}
-    
-    print(f"Vocabulary size: {len(vocab)}")
-    
-    # Tokenize file
-    print("Tokenizing...")
-    all_tokens = []
-    
-    with open(input_file, 'r', encoding='utf-8') as f:
-        for line in tqdm(f, desc="Tokenizing"):
-            words = line.strip().split()
-            tokens = [vocab.get(word, vocab['<unk>']) for word in words]
-            all_tokens.extend(tokens)
-    
-    # Save tokens
-    tokens_array = np.array(all_tokens, dtype=np.int32)
-    tokens_array.tofile(output_file)
-    
-    print(f"Saved {len(tokens_array):,} tokens to {output_file}")
-    
-    # Save vocabulary
-    vocab_file = output_file.replace('.bin', '_vocab.json')
-    with open(vocab_file, 'w', encoding='utf-8') as f:
-        json.dump(vocab, f, indent=2)
-    
-    print(f"Saved vocabulary to {vocab_file}")
-    return len(tokens_array)
+
 
 
 def main():
@@ -206,8 +160,8 @@ def main():
     parser.add_argument('--input', type=str, required=True, help='Input text file')
     parser.add_argument('--output', type=str, required=True, help='Output binary file')
     parser.add_argument('--vocab-size', type=int, default=50000, help='Vocabulary size for BPE')
-    parser.add_argument('--method', type=str, choices=['bpe', 'whitespace'], default='bpe',
-                       help='Tokenization method')
+    parser.add_argument('--method', type=str, choices=['bpe'], default='bpe',
+                       help='Tokenization method (only BPE supported)')
     parser.add_argument('--reuse-tokenizer', type=str, help='Directory with existing vocab.json and merges.txt')
     
     args = parser.parse_args()
@@ -223,37 +177,30 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
     
     try:
-        if args.method == 'bpe':
-            if args.reuse_tokenizer and os.path.exists(args.reuse_tokenizer):
-                # Reuse existing tokenizer
-                vocab_file = os.path.join(args.reuse_tokenizer, 'vocab.json')
-                merges_file = os.path.join(args.reuse_tokenizer, 'merges.txt')
-                
-                if os.path.exists(vocab_file) and os.path.exists(merges_file):
-                    print(f"Reusing tokenizer from {args.reuse_tokenizer}")
-                else:
-                    print(f"Error: vocab.json or merges.txt not found in {args.reuse_tokenizer}")
-                    return 1
-            else:
-                # prompt user to train new tokenizer with generate_full_bpe.py
-                print("No existing tokenizer provided. Please train a new BPE tokenizer using generate_full_bpe.py")
-                # prompt user to use reuse-tokenizer to reuse an existing tokenizer
-                print("Alternatively, you can use --reuse-tokenizer to reuse an existing tokenizer.")
-                return 1
-
-
+        # Only BPE tokenization is supported
+        if args.reuse_tokenizer and os.path.exists(args.reuse_tokenizer):
+            # Reuse existing tokenizer
+            vocab_file = os.path.join(args.reuse_tokenizer, 'vocab.json')
+            merges_file = os.path.join(args.reuse_tokenizer, 'merges.txt')
             
-            # Load tokenizer and tokenize
-            try:
-                tokenizer = load_bpe_tokenizer(vocab_file, merges_file)
-                num_tokens = tokenize_file(args.input, tokenizer, args.output)
-            except Exception as e:
-                print(f"Error with BPE tokenization: {e}")
-                print("Falling back to whitespace tokenization...")
-                num_tokens = simple_whitespace_tokenize(args.input, args.output, args.vocab_size)
-        
-        else:  # whitespace
-            num_tokens = simple_whitespace_tokenize(args.input, args.output, args.vocab_size)
+            if os.path.exists(vocab_file) and os.path.exists(merges_file):
+                print(f"Reusing tokenizer from {args.reuse_tokenizer}")
+            else:
+                print(f"Error: vocab.json or merges.txt not found in {args.reuse_tokenizer}")
+                return 1
+        else:
+            # prompt user to train new tokenizer
+            print("No existing tokenizer provided. Please train a new BPE tokenizer first.")
+            print("Use --reuse-tokenizer to specify the directory with vocab.json and merges.txt")
+            return 1
+
+        # Load tokenizer and tokenize
+        try:
+            tokenizer = load_bpe_tokenizer(vocab_file, merges_file)
+            num_tokens = tokenize_file(args.input, tokenizer, args.output)
+        except Exception as e:
+            print(f"Error with BPE tokenization: {e}")
+            return 1
         
         print(f"\nSuccess! Processed {num_tokens:,} tokens")
         print(f"Output file: {args.output}")

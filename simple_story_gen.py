@@ -19,53 +19,55 @@ sys.path.append('cs336_basics')
 from my_training import SimpleTransformer, TransformerConfig
 
 
-def create_random_tokenizer():
-    """Create a simple tokenizer that works with vocab_size=50257"""
-    # This is a placeholder - in reality we need the exact tokenizer from training
-    # For demonstration, we'll create mappings for basic text
+def load_bpe_tokenizer():
+    """Load the trained BPE tokenizer from data/tokenizer folder"""
+    from cs336_basics.my_tokenizer import BpeTokenizer
     
-    # Load a sample of the training data to understand the token distribution
-    data = np.fromfile('data/train.bin', dtype=np.int32)
-    unique_tokens = np.unique(data[:10000])  # Sample first 10k tokens
+    vocab_file = 'data/tokenizer/vocab.json'
+    merges_file = 'data/tokenizer/merges.txt'
     
-    print(f"Found {len(unique_tokens)} unique tokens in training data sample")
-    print(f"Token range: {unique_tokens.min()} to {unique_tokens.max()}")
+    print(f"Loading BPE tokenizer from {os.path.dirname(vocab_file)}")
     
-    # Create a simple character-to-token mapping
-    chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:'\"-()[]{}@#$%^&*+=<>/\\|`~_\n\t"
+    # Load vocabulary
+    with open(vocab_file, 'r', encoding='utf-8') as f:
+        vocab_dict = json.load(f)
     
-    # Use some of the actual tokens from training data
-    token_to_char = {}
-    char_to_token = {}
+    # Convert vocab back to the format expected by BpeTokenizer
+    id_to_bytes = {}
+    for k, v in vocab_dict.items():
+        token_id = int(k)
+        if token_id < 256:
+            # Base bytes: convert back to single byte
+            try:
+                # Try latin-1 first (for proper base bytes)
+                id_to_bytes[token_id] = v.encode('latin-1')
+            except UnicodeEncodeError:
+                # Fallback: if it's a replacement character, use the token_id as byte value
+                id_to_bytes[token_id] = bytes([token_id])
+        else:
+            # Merged tokens and special tokens: use UTF-8
+            id_to_bytes[token_id] = v.encode('utf-8')
     
-    # Map first few unique tokens to common characters
-    for i, char in enumerate(chars):
-        if i < len(unique_tokens):
-            token_id = int(unique_tokens[i])
-            token_to_char[token_id] = char
-            char_to_token[char] = token_id
+    # Load merges
+    with open(merges_file, 'r', encoding='utf-8') as f:
+        merges_lines = f.read().strip().split('\n')
     
-    return char_to_token, token_to_char
-
-
-def encode_text(text, char_to_token, max_length=100):
-    """Encode text using our simple tokenizer"""
-    tokens = []
-    for char in text[:max_length]:  # Limit length
-        token_id = char_to_token.get(char, list(char_to_token.values())[0])  # Use first token as default
-        tokens.append(token_id)
-    return tokens
-
-
-def decode_tokens(tokens, token_to_char):
-    """Decode tokens back to text"""
-    text = ""
-    for token_id in tokens:
-        if isinstance(token_id, torch.Tensor):
-            token_id = token_id.item()
-        char = token_to_char.get(token_id, '')
-        text += char
-    return text
+    # Convert merges back to tuple format
+    merges = []
+    for line in merges_lines:
+        if line.strip():
+            parts = line.split(' ', 1)
+            if len(parts) == 2:
+                merges.append((parts[0].encode('utf-8'), parts[1].encode('utf-8')))
+    
+    tokenizer = BpeTokenizer(
+        id_to_bytes=id_to_bytes,
+        merges=merges,
+        special_tokens=['<|endoftext|>']
+    )
+    
+    print(f"✅ BPE tokenizer loaded with vocab size: {len(id_to_bytes)}")
+    return tokenizer
 
 
 def load_model():
@@ -115,18 +117,19 @@ def load_model():
 
 
 @torch.no_grad()
-def generate_story(model, prompt, char_to_token, token_to_char, device, max_tokens=50, temperature=0.8):
-    """Generate a story from a prompt"""
+def generate_story(model, tokenizer, prompt, device, max_tokens=50, temperature=0.8):
+    """Generate a story from a prompt using BPE tokenizer"""
     
     print(f"🎭 Generating from prompt: '{prompt}'")
     
-    # Encode prompt
-    input_tokens = encode_text(prompt, char_to_token)
+    # Encode prompt using BPE tokenizer
+    input_tokens = tokenizer.encode(prompt)
     if not input_tokens:
-        input_tokens = [list(char_to_token.values())[0]]  # Fallback
+        input_tokens = [0]  # Fallback to first token
     
     input_ids = torch.tensor([input_tokens], dtype=torch.long, device=device)
     
+    print(f"Input tokens: {len(input_tokens)}")
     print(f"Input token IDs: {input_ids[0][:10].tolist()}... (showing first 10)")
     
     generated = input_ids.clone()
@@ -148,20 +151,22 @@ def generate_story(model, prompt, char_to_token, token_to_char, device, max_toke
         # Get next token logits
         next_logits = logits[0, -1, :] / temperature
         
-        # Simple sampling - just take most likely tokens
-        probs = F.softmax(next_logits, dim=-1)
+        # Apply top-k sampling
+        top_k = 50
+        if top_k > 0:
+            top_k_logits, _ = torch.topk(next_logits, min(top_k, next_logits.size(-1)))
+            next_logits[next_logits < top_k_logits[-1]] = -float('inf')
         
-        # Sample from top tokens to add some randomness
-        top_k = 100
-        top_probs, top_indices = torch.topk(probs, top_k)
-        next_token = top_indices[torch.multinomial(top_probs, 1)]
+        # Sample next token
+        probs = F.softmax(next_logits, dim=-1)
+        next_token = torch.multinomial(probs, 1)
         
         # Append token
-        generated = torch.cat([generated, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
+        generated = torch.cat([generated, next_token.unsqueeze(0)], dim=1)
     
-    # Decode generated text
+    # Decode generated text using BPE tokenizer
     all_tokens = generated[0].cpu().tolist()
-    generated_text = decode_tokens(all_tokens, token_to_char)
+    generated_text = tokenizer.decode(all_tokens)
     
     return generated_text
 
@@ -181,18 +186,15 @@ def main():
         # Load model
         model, device = load_model()
         
-        # Create tokenizer
-        print("Creating simple tokenizer...")
-        char_to_token, token_to_char = create_random_tokenizer()
-        
-        print(f"Tokenizer created with {len(char_to_token)} mappings")
+        # Load BPE tokenizer
+        print("Loading BPE tokenizer...")
+        tokenizer = load_bpe_tokenizer()
         
         # Generate story
         story = generate_story(
             model=model,
+            tokenizer=tokenizer,
             prompt=args.prompt,
-            char_to_token=char_to_token,
-            token_to_char=token_to_char,
             device=device,
             max_tokens=args.max_tokens,
             temperature=args.temperature
@@ -203,8 +205,7 @@ def main():
         print(story)
         print("=" * 60)
         
-        print("\n💡 Note: This is using a simplified tokenizer.")
-        print("For best results, use the exact tokenizer from training.")
+        print("\n✅ Generated using trained BPE tokenizer!")
         
     except Exception as e:
         print(f"❌ Error: {e}")
