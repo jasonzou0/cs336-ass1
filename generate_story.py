@@ -170,6 +170,11 @@ class StoryGenerator:
                 probs = F.softmax(next_token_logits, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
                 
+                # Safety check: ensure token ID is within valid range
+                if next_token.item() >= len(self.tokenizer.id_to_bytes if hasattr(self.tokenizer, 'id_to_bytes') else range(50257)):
+                    print(f"⚠️  Generated token ID {next_token.item()} is out of range, stopping generation")
+                    break
+                
                 # Check for end-of-text or story completion
                 if self._should_stop(next_token, generated_ids):
                     break
@@ -197,7 +202,7 @@ class StoryGenerator:
         return False
 
 
-def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = None, tokenizer_path: Optional[str] = None):
+def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = None, tokenizer_path: Optional[str] = None, vocab_size_override: Optional[int] = None):
     """Load trained model and configuration"""
     
     # Load configuration
@@ -267,9 +272,15 @@ def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = Non
         print("   Use --tokenizer argument to specify tokenizer directory")
         tokenizer = SimpleCharTokenizer()
     
+    # Use vocab_size override if provided, otherwise use model config
+    actual_vocab_size = vocab_size_override if vocab_size_override is not None else model_config['vocab_size']
+    
+    if vocab_size_override is not None:
+        print(f"⚠️  Overriding vocab_size: {model_config['vocab_size']} → {vocab_size_override}")
+    
     # Use the actual model architecture from training
     transformer_config = TransformerConfig(
-        vocab_size=model_config['vocab_size'],
+        vocab_size=actual_vocab_size,
         context_length=model_config['context_length'], 
         d_model=model_config['d_model'],
         num_layers=model_config['num_layers'],
@@ -282,8 +293,42 @@ def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = Non
     
     model = SimpleTransformer(transformer_config)
     
-    # Load model weights
-    model.load_state_dict(checkpoint['model_state_dict'])
+    # Load model weights with vocab size handling
+    state_dict = checkpoint['model_state_dict']
+    
+    if vocab_size_override is not None and vocab_size_override != model_config['vocab_size']:
+        print(f"⚠️  Adjusting embedding weights for vocab size mismatch")
+        
+        # Handle token embeddings
+        original_embeddings = state_dict['token_embeddings.weight']
+        original_vocab_size = original_embeddings.size(0)
+        
+        if vocab_size_override < original_vocab_size:
+            # Truncate embeddings
+            state_dict['token_embeddings.weight'] = original_embeddings[:vocab_size_override]
+            print(f"   Truncated token embeddings: {original_vocab_size} → {vocab_size_override}")
+        else:
+            # Pad embeddings with random values
+            padding_size = vocab_size_override - original_vocab_size
+            padding = torch.randn(padding_size, original_embeddings.size(1)) * 0.1
+            state_dict['token_embeddings.weight'] = torch.cat([original_embeddings, padding], dim=0)
+            print(f"   Padded token embeddings: {original_vocab_size} → {vocab_size_override}")
+        
+        # Handle lm_head weights
+        original_lm_head = state_dict['lm_head.weight']
+        
+        if vocab_size_override < original_vocab_size:
+            # Truncate lm_head
+            state_dict['lm_head.weight'] = original_lm_head[:vocab_size_override]
+            print(f"   Truncated lm_head: {original_vocab_size} → {vocab_size_override}")
+        else:
+            # Pad lm_head with random values
+            padding_size = vocab_size_override - original_vocab_size
+            padding = torch.randn(padding_size, original_lm_head.size(1)) * 0.1
+            state_dict['lm_head.weight'] = torch.cat([original_lm_head, padding], dim=0)
+            print(f"   Padded lm_head: {original_vocab_size} → {vocab_size_override}")
+    
+    model.load_state_dict(state_dict)
     model.to(device)
     
     return model, tokenizer, config
@@ -380,6 +425,8 @@ def main():
                        help='Top-k sampling parameter')
     parser.add_argument('--top-p', type=float, default=0.9,
                        help='Top-p (nucleus) sampling parameter')
+    parser.add_argument('--vocab-size', type=int, 
+                       help='Override vocab size for tokenizer compatibility (e.g., 10000, 50257)')
     
     args = parser.parse_args()
     
@@ -391,7 +438,7 @@ def main():
     try:
         # Load model
         print("🔄 Loading trained model...")
-        model, tokenizer, config = load_model_and_config(args.checkpoint, args.config, args.tokenizer)
+        model, tokenizer, config = load_model_and_config(args.checkpoint, args.config, args.tokenizer, args.vocab_size)
         
         # Create generator
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
