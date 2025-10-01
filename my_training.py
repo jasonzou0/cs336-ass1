@@ -93,6 +93,8 @@ class TrainingConfig:
         batch_size: int = 32,
         max_iters: int = 100000,
         grad_clip: float = 1.0,
+        early_stop_patience: int = 0,
+        early_stop_metric: str = 'val',
         
         # Optimization
         learning_rate: float = 1e-4,
@@ -129,6 +131,9 @@ class TrainingConfig:
         self.beta2 = beta2
         self.eps = eps
         
+        self.early_stop_patience = early_stop_patience
+        self.early_stop_metric = early_stop_metric
+
         self.eval_interval = eval_interval
         self.log_interval = log_interval
         self.checkpoint_interval = checkpoint_interval
@@ -315,6 +320,10 @@ def main():
     parser.add_argument('--warmup-iters', type=int, default=2000)
     parser.add_argument('--weight-decay', type=float, default=1e-2)
     parser.add_argument('--grad-clip', type=float, default=1.0)
+    parser.add_argument('--early-stop-patience', type=int, default=0,
+                        help='Number of eval intervals to wait for improvement before stopping (0 disables)')
+    parser.add_argument('--early-stop-metric', type=str, default='val', choices=['val', 'train'],
+                        help='Which loss metric to monitor for early stopping')
     
     # Data and logging
     parser.add_argument('--data-path', type=str, required=True, help='Path to training data', default='data/train.bin')
@@ -375,6 +384,8 @@ def main():
         warmup_iters=args.warmup_iters,
         weight_decay=args.weight_decay,
         grad_clip=args.grad_clip,
+        early_stop_patience=args.early_stop_patience,
+        early_stop_metric=args.early_stop_metric,
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
         checkpoint_interval=args.checkpoint_interval,
@@ -439,6 +450,18 @@ def main():
     print("Starting training...")
     model.train()
     
+    monitor_split = train_config.early_stop_metric
+    if train_config.early_stop_patience > 0 and monitor_split == 'val' and val_data is None:
+        print("Early stopping metric 'val' requested but validation data is unavailable; falling back to 'train'.")
+        monitor_split = 'train'
+
+    best_metric = float('inf')
+    best_iter = None
+    patience_counter = 0
+    stop_training = False
+    best_checkpoint_path = os.path.join(args.out_dir, 'best_model.pt')
+    last_iter = start_iter - 1
+
     t0 = time.time()
     for iter_num in range(start_iter, train_config.max_iters):
         
@@ -467,6 +490,26 @@ def main():
             train_loss_str = f"{train_loss:.4f}" if train_loss is not None else "N/A"
             val_loss_str = f"{val_loss:.4f}" if val_loss is not None else "N/A"
             print(f"Step {iter_num}: train loss {train_loss_str}, val loss {val_loss_str}")
+
+            monitored_loss = losses.get(monitor_split)
+            if monitored_loss is not None:
+                if monitored_loss < best_metric - 1e-8:
+                    best_metric = monitored_loss
+                    best_iter = iter_num
+                    patience_counter = 0
+                    run_save_checkpoint(model, optimizer, iter_num, best_checkpoint_path)
+                    print(f"New best {monitor_split} loss {best_metric:.4f} at step {iter_num}, saved to {best_checkpoint_path}")
+                elif train_config.early_stop_patience > 0:
+                    patience_counter += 1
+                    if patience_counter >= train_config.early_stop_patience:
+                        print(
+                            f"Early stopping: no improvement in {monitor_split} loss for "
+                            f"{train_config.early_stop_patience} evaluations (best {best_metric:.4f} at step {best_iter})."
+                        )
+                        stop_training = True
+
+        if stop_training:
+            break
         
         # Sample batch
         X, Y = run_get_batch(train_data, train_config.batch_size, model_config.context_length, device)
@@ -491,16 +534,19 @@ def main():
             t0 = t1
             lossf = loss.item()
             print(f"iter {iter_num}: loss {lossf:.4f}, lr {lr:.2e}, time {dt*1000:.2f}ms")
-        
+
         # Checkpointing
         if iter_num % train_config.checkpoint_interval == 0 and iter_num > 0:
             checkpoint_path = os.path.join(args.out_dir, f'ckpt_{iter_num:06d}.pt')
             run_save_checkpoint(model, optimizer, iter_num, checkpoint_path)
             print(f"Saved checkpoint to {checkpoint_path}")
-    
+
+        last_iter = iter_num
+
     # Save final checkpoint
     final_checkpoint_path = os.path.join(args.out_dir, 'final_model.pt')
-    run_save_checkpoint(model, optimizer, train_config.max_iters, final_checkpoint_path)
+    final_step = (last_iter + 1) if last_iter >= 0 else 0
+    run_save_checkpoint(model, optimizer, final_step, final_checkpoint_path)
     print(f"Saved final model to {final_checkpoint_path}")
     
     print("Training completed!")

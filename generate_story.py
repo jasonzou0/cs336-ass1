@@ -294,10 +294,9 @@ def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = Non
         print(f"  Merges: {merges_file}")
         tokenizer = load_bpe_tokenizer(vocab_file, merges_file)
     else:
-        print("⚠️  BPE tokenizer files not found, using fallback character tokenizer")
-        print("   Please ensure vocab.json and merges.txt are available")
-        print("   Use --tokenizer argument to specify tokenizer directory")
-        tokenizer = SimpleCharTokenizer()
+        print("⚠️  BPE tokenizer files not found, unable to continue without vocab.json and merges.txt")
+        print("   Use --tokenizer argument to specify tokenizer directory or ensure tokenizer artifacts exist")
+        sys.exit("Tokenizer initialization failed")
     
     # Use vocab_size override if provided, otherwise use model config
     actual_vocab_size = vocab_size_override if vocab_size_override is not None else model_config['vocab_size']
