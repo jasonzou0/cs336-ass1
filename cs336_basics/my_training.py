@@ -109,6 +109,7 @@ class TrainingConfig:
         log_interval: int = 100,
         checkpoint_interval: int = 5000,
         eval_iters: int = 200,
+        early_stop_patience: int = 0,
         
         # Data
         data_path: str = "data/train.bin",
@@ -133,6 +134,7 @@ class TrainingConfig:
         self.log_interval = log_interval
         self.checkpoint_interval = checkpoint_interval
         self.eval_iters = eval_iters
+        self.early_stop_patience = early_stop_patience
         
         self.data_path = data_path
         self.val_data_path = val_data_path
@@ -324,6 +326,8 @@ def main():
     parser.add_argument('--log-interval', type=int, default=100)
     parser.add_argument('--checkpoint-interval', type=int, default=5000)
     parser.add_argument('--eval-iters', type=int, default=200)
+    parser.add_argument('--early-stop-patience', type=int, default=0, 
+                       help='Number of evaluations without improvement before stopping (0 = disabled)')
     
     # System
     parser.add_argument('--device', type=str, default='cuda')
@@ -379,6 +383,7 @@ def main():
         log_interval=args.log_interval,
         checkpoint_interval=args.checkpoint_interval,
         eval_iters=args.eval_iters,
+        early_stop_patience=args.early_stop_patience,
         data_path=args.data_path,
         val_data_path=args.val_data_path,
         device=device,
@@ -439,6 +444,10 @@ def main():
     print("Starting training...")
     model.train()
     
+    # Early stopping variables
+    best_val_loss = float('inf')
+    patience_counter = 0
+    
     t0 = time.time()
     for iter_num in range(start_iter, train_config.max_iters):
         
@@ -467,6 +476,21 @@ def main():
             train_loss_str = f"{train_loss:.4f}" if train_loss is not None else "N/A"
             val_loss_str = f"{val_loss:.4f}" if val_loss is not None else "N/A"
             print(f"Step {iter_num}: train loss {train_loss_str}, val loss {val_loss_str}")
+            
+            # Early stopping logic
+            if train_config.early_stop_patience > 0 and val_loss is not None:
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    print(f"New best validation loss: {val_loss:.4f}")
+                else:
+                    patience_counter += 1
+                    print(f"No improvement for {patience_counter} evaluations (patience: {train_config.early_stop_patience})")
+                    
+                    if patience_counter >= train_config.early_stop_patience:
+                        print(f"Early stopping triggered after {iter_num} steps!")
+                        print(f"Best validation loss: {best_val_loss:.4f}")
+                        break
         
         # Sample batch
         X, Y = run_get_batch(train_data, train_config.batch_size, model_config.context_length, device)

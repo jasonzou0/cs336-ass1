@@ -61,3 +61,6 @@ python prepare_data.py --input data/TinyStoriesV2-GPT4-train.txt --method bpe --
 python prepare_data.py --input data/TinyStoriesV2-GPT4-valid.txt --method bpe --reuse-tokenizer data/tokenizer_10000 --output data/val.bin
 ```
 will use data/tokenizer_50k to tokenize data/TinyStoriesV2-GPT4-train.txt
+
+### generate story
+uv run python generate_story.py --checkpoint checkpoints/ckpt_020000.pt --prompt "Once upon a time" --tokenizer data/tokenizer_10000 --max-tokens 200 

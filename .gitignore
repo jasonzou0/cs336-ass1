@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 data
 checkpoints
+checkpoints_medium_1
+checkpoints_medium_2
+checkpoints_medium_3
+checkpoints_medium_4
 # C extensions
 *.so
 
