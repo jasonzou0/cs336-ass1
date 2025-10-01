@@ -84,6 +84,7 @@ class StoryGenerator:
         self.tokenizer = tokenizer
         self.device = device
         self.model.eval()
+        self.eot_token_id = self._resolve_special_token_id("<|endoftext|>")
     
     def encode_prompt(self, prompt: str) -> torch.Tensor:
         """Encode text prompt to token IDs"""
@@ -189,17 +190,43 @@ class StoryGenerator:
     
     def _should_stop(self, next_token: torch.Tensor, generated_ids: torch.Tensor) -> bool:
         """Check if generation should stop"""
-        # Stop if we hit end-of-text token (if it exists)
-        # You might need to adjust this based on your tokenizer
-        if hasattr(self.tokenizer, 'eos_token_id'):
-            if next_token.item() == self.tokenizer.eos_token_id:
-                return True
-        
+        token_id = next_token.item()
+
+        eos_token_id = getattr(self.tokenizer, 'eos_token_id', None)
+        if eos_token_id is not None and token_id == eos_token_id:
+            return True
+
+        if self.eot_token_id is not None and token_id == self.eot_token_id:
+            return True
+
         # Stop if sequence gets too long
         if generated_ids.size(1) > 1024:  # Max context length
             return True
-            
+
         return False
+
+    def _resolve_special_token_id(self, token_text: str) -> Optional[int]:
+        """Attempt to find the ID for a special token by text."""
+        token_bytes = token_text.encode('utf-8')
+
+        if hasattr(self.tokenizer, 'bytes_to_id'):
+            token_id = self.tokenizer.bytes_to_id.get(token_bytes)
+            if token_id is not None:
+                return token_id
+
+        if hasattr(self.tokenizer, 'encode'):
+            try:
+                encoded = self.tokenizer.encode(token_text)
+            except Exception:
+                encoded = []
+            if len(encoded) == 1:
+                return encoded[0]
+
+        eos_token_id = getattr(self.tokenizer, 'eos_token_id', None)
+        if token_text == '<|endoftext|>' and eos_token_id is not None:
+            return eos_token_id
+
+        return None
 
 
 def load_model_and_config(checkpoint_path: str, config_path: Optional[str] = None, tokenizer_path: Optional[str] = None, vocab_size_override: Optional[int] = None):
