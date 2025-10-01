@@ -33,6 +33,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from torch.cuda.amp import GradScaler, autocast
 
 # Import our implementations
 from tests.adapters import (
@@ -117,6 +118,9 @@ class TrainingConfig:
         val_data_path: Optional[str] = None,
         device: str = "auto",
         compile: bool = False,
+        
+        # Mixed precision
+        use_mixed_precision: bool = False,
     ):
         self.batch_size = batch_size
         self.max_iters = max_iters
@@ -143,6 +147,7 @@ class TrainingConfig:
         self.val_data_path = val_data_path
         self.device = device
         self.compile = compile
+        self.use_mixed_precision = use_mixed_precision
 
 
 class SimpleTransformer(nn.Module):
@@ -272,7 +277,7 @@ def load_data(data_path: str) -> np.ndarray:
     return np.memmap(data_path, dtype=np.int32, mode='r')
 
 
-def estimate_loss(model, train_data, val_data, eval_iters, batch_size, context_length, device):
+def estimate_loss(model, train_data, val_data, eval_iters, batch_size, context_length, device, use_mixed_precision=False):
     """Estimate loss on train and validation sets"""
     model.eval()
     losses = {}
@@ -285,7 +290,11 @@ def estimate_loss(model, train_data, val_data, eval_iters, batch_size, context_l
         for _ in range(eval_iters):
             X, Y = run_get_batch(data, batch_size, context_length, device)
             with torch.no_grad():
-                logits, loss = model(X, Y)
+                if use_mixed_precision:
+                    with autocast():
+                        logits, loss = model(X, Y)
+                else:
+                    logits, loss = model(X, Y)
                 split_losses.append(loss.item())
         
         losses[split] = sum(split_losses) / len(split_losses)
@@ -320,7 +329,7 @@ def main():
     parser.add_argument('--warmup-iters', type=int, default=2000)
     parser.add_argument('--weight-decay', type=float, default=1e-2)
     parser.add_argument('--grad-clip', type=float, default=1.0)
-    parser.add_argument('--early-stop-patience', type=int, default=0,
+    parser.add_argument('--early-stop-patience', type=int, default=0,       
                         help='Number of eval intervals to wait for improvement before stopping (0 disables)')
     parser.add_argument('--early-stop-metric', type=str, default='val', choices=['val', 'train'],
                         help='Which loss metric to monitor for early stopping')
@@ -337,6 +346,7 @@ def main():
     # System
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--compile', action='store_true', help='Compile model with torch.compile')
+    parser.add_argument('--mixed-precision', action='store_true', help='Use mixed precision training (FP16)')
     parser.add_argument('--resume', type=str, help='Resume from checkpoint')
     
     # Configuration file
@@ -394,6 +404,7 @@ def main():
         val_data_path=args.val_data_path,
         device=device,
         compile=args.compile,
+        use_mixed_precision=args.mixed_precision,
     )
     
     # Save configuration
@@ -437,6 +448,9 @@ def main():
         weight_decay=train_config.weight_decay,
     )
     
+    # Initialize gradient scaler for mixed precision
+    scaler = GradScaler() if train_config.use_mixed_precision else None
+    
     # Resume from checkpoint if specified
     start_iter = 0
     if args.resume and os.path.exists(args.resume):
@@ -445,6 +459,10 @@ def main():
         print(f"Resumed from iteration {start_iter}")
     
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    if train_config.use_mixed_precision:
+        print("Using mixed precision training (FP16)")
+    else:
+        print("Using full precision training (FP32)")
     
     # Training loop
     print("Starting training...")
@@ -483,7 +501,7 @@ def main():
             losses = estimate_loss(
                 model, train_data, val_data, 
                 train_config.eval_iters, train_config.batch_size, 
-                model_config.context_length, device
+                model_config.context_length, device, train_config.use_mixed_precision
             )
             train_loss = losses.get('train', None)
             val_loss = losses.get('val', None)
@@ -514,18 +532,34 @@ def main():
         # Sample batch
         X, Y = run_get_batch(train_data, train_config.batch_size, model_config.context_length, device)
         
-        # Forward pass
-        logits, loss = model(X, Y)
-        
-        # Backward pass
+        # Forward and backward pass with mixed precision support
         optimizer.zero_grad()
-        loss.backward()
         
-        # Gradient clipping
-        run_gradient_clipping(model.parameters(), train_config.grad_clip)
-        
-        # Update parameters
-        optimizer.step()
+        if train_config.use_mixed_precision:
+            # Mixed precision training
+            with autocast():
+                logits, loss = model(X, Y)
+            
+            # Scale loss and backward pass
+            scaler.scale(loss).backward()
+            
+            # Gradient clipping with scaled gradients
+            scaler.unscale_(optimizer)
+            run_gradient_clipping(model.parameters(), train_config.grad_clip)
+            
+            # Update parameters
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            # Regular FP32 training
+            logits, loss = model(X, Y)
+            loss.backward()
+            
+            # Gradient clipping
+            run_gradient_clipping(model.parameters(), train_config.grad_clip)
+            
+            # Update parameters
+            optimizer.step()
         
         # Logging
         if iter_num % train_config.log_interval == 0:
