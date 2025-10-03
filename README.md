@@ -46,3 +46,9 @@ Training:
 ```sh
 uv run scripts/trainer_cli.py --train_data {TRAIN_TOKENS_DATA} --tokenizer_dir ${BPE_ARTIFACT_DIR}  --eval_data {EVAL_TOKENS_DATA} --device=mps  --iterations=${TRAIN_BATCHES} --checkpoint_interval=${CHECKPOINT_INTERVAL} --log_to_wandb
 ```
+
+Decoding:
+
+```sh
+uv run scripts/decoder_cli.py --model ${MODEL_CHECKPOINT} --tokenizer_dir ${BPE_ARTIFACT_DIR} --context_length 256 --device mps --max_new_tokens 200
+```
