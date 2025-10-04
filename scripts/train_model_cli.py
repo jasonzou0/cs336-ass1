@@ -58,11 +58,11 @@ def parse_args():
     parser.add_argument('--min_loss', type=float, default=0.8, help='Minimum loss value to stop the training loop.')  
 
     parser.add_argument('--eval_every', type=int, default=50, help='Evaluate model every N iterations.')
-    parser.add_argument('--eval_iters', type=int, default=3, help='Evaluate over this many batches during each evaluation.')
+    parser.add_argument('--eval_iters', type=int, default=5, help='Evaluate over this many batches during each evaluation.')
 
     # checkpoint save/load
     parser.add_argument('--save_every', type=int, default=50, help='Save checkpoint every N iterations.')
-    parser.add_argument('--checkpoint', type=str, default=None, help='Path to a checkpoint to resume training from.')
+    parser.add_argument('--ckpt', type=str, default=None, help='Path to a checkpoint to resume training from.')
 
     return parser.parse_args()
 
@@ -119,7 +119,6 @@ def main():
                         rope_theta=100000,
                         device=torch.device(args.device),
                         dtype={'float32': torch.float32, 'float16': torch.float16, 'bfloat16': torch.bfloat16}[args.dtype] )
-    torch.compile(model, fullgraph=True)
 
     # TODO: fix the compile error:
     # Traceback (most recent call last):
@@ -141,8 +140,8 @@ def main():
     optimizer=AdamW(model.parameters(), lr=args.learning_rate)
     
     # Load Checkpoint?
-    if args.checkpoint is not None:
-        file_checkpoint=os.path.join(".", args.checkpoint)
+    if args.ckpt is not None:
+        file_checkpoint=os.path.join(".", args.ckpt)
         # Load model and optimizer state from checkpoint
         loaded_iter=load_checkpoint(src=file_checkpoint, model=model, optimizer=optimizer)
         print(f"Resumed model and optimizer state from checkpoint {file_checkpoint}")
@@ -154,6 +153,10 @@ def main():
     print(f"Optimizer has {sum(p.numel() for p in optimizer.param_groups[0]['params'])} parameters")
     print(f"Model parameters:{[name for name, param in model.named_parameters()]}")
         
+    # Compile model
+    # QUESTION: when to compile? before or after loading checkpoint?
+    model=torch.compile(model, fullgraph=True)
+
     # Prepare Data
     # see if tokenized data already exists
     tokenized_data_path = os.path.join(dir_data, args.tokenizer_data)
@@ -178,6 +181,8 @@ def main():
 
     print(f"Entering training loop...")
     while True:
+        t_it_start=datetime.datetime.now()
+
         # End loop conditions
         if iter>args.max_iters or \
            loss<args.min_loss:  
@@ -200,12 +205,6 @@ def main():
 
         # Update model weights
         optimizer.step()
-
-        # Logging
-        if iter%args.log_every==0:
-            # Log training metrics
-            # TODO: better logging
-            print(f"Iteration {iter}, loss={loss if 'loss' in locals() else 'N/A'}, lr={optimizer.param_groups[0]['lr']}")
 
         # Save checkpoint
         if iter%args.save_every==0 and iter>0:
@@ -239,13 +238,26 @@ def main():
         if lr_old!=lr_new:
             # TODO: is this the right way to update learning rate for AdamW?
             for param_group in optimizer.param_groups:
-                print(f"learning rate update for next iteration {iter + 1}: {param_group['lr']}->{lr_new}")
+                # print(f"learning rate update for next iteration {iter + 1}: {param_group['lr']}->{lr_new}")
                 param_group['lr'] = lr_new
             # optimizer.lr=lr_new
         lr_old=lr_new
 
         # Increment iteration counter 
         iter+=1
+
+        # Logging
+        t_it_end=datetime.datetime.now()
+        t_it_elapsed=t_it_end-t_it_start
+        if iter%args.log_every==0:
+            # Log training metrics
+            # TODO: better logging
+            print(f"{datetime.datetime.now()} - " \
+                  f"iteration={iter}," \
+                  f"elapse={t_it_elapsed.total_seconds():.3f}s," \
+                  f"loss={loss if 'loss' in locals() else 'N/A'},"\
+                  f"lr={optimizer.param_groups[0]['lr']}")
+
     
 if __name__ == "__main__":
     main()

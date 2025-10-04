@@ -1,5 +1,17 @@
 import torch
 
+def strip_prefix(state_dict, prefix="_orig_mod."):
+    return { (k[len(prefix):] if k.startswith(prefix) else k): v
+             for k, v in state_dict.items() }
+
+def clean_compiled_state_dict(state_dict):
+    # If keys in sd have the prefix, remove it:
+    first_key = next(iter(state_dict))
+    if first_key.startswith("_orig_mod."):
+        print("state_dict is from a compiled model, stripping _orig_mod. prefix from state_dict keys")
+        state_dict = strip_prefix(state_dict, "_orig_mod.")
+    return state_dict
+
 def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, iteration: int, out: str) -> None:
     """
     Save the model state, optimizer state, and hyperparameters to a checkpoint file.
@@ -52,7 +64,7 @@ def load_checkpoint(src: str, model: torch.nn.Module, optimizer: torch.optim.Opt
     """
     checkpoint_dict = torch.load(src)
     
-    # Verify model architecture matches
+    # Verify model architecture matches (check if hyperparameters are same)
     if 'model_args' in checkpoint_dict:
         saved_args = checkpoint_dict['model_args']
         for key, value in saved_args.items():
@@ -73,7 +85,14 @@ def load_checkpoint(src: str, model: torch.nn.Module, optimizer: torch.optim.Opt
                 if key in group:
                     group[key] = saved_args[key]
 
+    # Strip _orig_mod. prefix if present
+    print("Cleaning state_dicts for model from compiled model if necessary")
+    checkpoint_dict['model_state_dict'] = clean_compiled_state_dict(checkpoint_dict['model_state_dict'])
+    print("Cleaning state_dicts for optimizer from compiled model if necessary")
+    checkpoint_dict['optimizer_state_dict'] = clean_compiled_state_dict(checkpoint_dict['optimizer_state_dict'])
+
     # Load states
     model.load_state_dict(checkpoint_dict['model_state_dict'])
     optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
     return checkpoint_dict['iteration']
+

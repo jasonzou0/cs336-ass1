@@ -1,3 +1,9 @@
+ln -s ../data/ ./data
+ln -s ../output/ ./output
+
+# update best checkpoint to use for inference
+export best_ckpt=$(realpath "./output/2025-10-04 11_14_26.826975/iter1700_loss2.2878000736236572_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 11_36_40.384457.bin")
+rm ./output/inference_model.bin && ln -s "$best_ckpt" ./output/inference_model.bin
 uv run scripts/train_bpe_cli.py --input-path data/TinyStoriesV2-GPT4-train.txt --vocab-size 1000 --output-dir output/tonytest_tiny1k_$(date +%F_%H%M%S) --profile
 
 uv run scripts/train_bpe_cli.py --input-path ./data/owt_train.txt --vocab-size 36000 --output-dir output/tonytest_owt36k --profile --load-tokens-counts
@@ -21,4 +27,9 @@ uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-si
 
 
 uv run python scripts/train_model_cli.py --resume="output/checkpoints/context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 00_40_19.685851.bin"
-uv run python scripts/train_model_cli.py --checkpoint="output/inference_model.bin" --lr_schedule_total_iters=1500
+
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=1500 --ckpt="output/inference_model.bin" 
+
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --ckpt="output/inference_model.bin" 
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --ckpt="output/inference_model.bin" 
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --ckpt="output/2025-10-04 11_57_28.689428/iter1750_loss2.6131703853607178_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 12_07_44.040165.bin"
