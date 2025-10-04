@@ -651,7 +651,6 @@ def perform_bpe_merges(
         tokens_counts,saved_cache = _update_tokens_counts(tokens_counts, most_common_pair, new_token, saved_cache)
         # tokens_counts = _update_tokens_counts_mp(tokens_counts, most_common_pair, new_token)
 
-
     return vocab, merges
 
 def train_bpe(

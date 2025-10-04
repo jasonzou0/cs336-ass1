@@ -584,6 +584,7 @@ def transformer_lm(
 
     return logits
 
+
 def log_softmax(x: Float[Tensor," ..."], dim: int) -> Float[Tensor, " ..."]:
     """ Numerically stable log-softmax implementation.
 
@@ -617,14 +618,14 @@ def cross_entropy(
     # vocab_size = predicted.shape[-1]
     vocab_size = predicted.shape[-1]
     predicted_flat = predicted.view(-1, vocab_size)  # (batch_size , vocab_size)
-    batch_size = predicted_flat.shape[0]
+    flatten_dim_0 = predicted_flat.shape[0]  #it's actually batch_size*sequence_length
 
     # following may not be needed since softmax already did the max deduction
     # predicted_flat=predicted_flat-predicted_flat.max(dim=1, keepdim=True).values 
     # print(f"predicted_flat={predicted_flat}")
-
+    targets_1d=target.view(-1)  # (batch_size,)
     targets_flat=torch.zeros_like(predicted_flat)
-    targets_flat[torch.arange(batch_size), target]=1
+    targets_flat[torch.arange(flatten_dim_0), targets_1d]=1
     # print(targets_flat)
 
     # Compute log probabilities
@@ -786,3 +787,78 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
             if grad_norm > max_l2_norm:
                 parameter.grad.data = parameter.grad.data * (max_l2_norm / (total_norm+eps))
             
+
+class Transformer(nn.Module):
+    def __init__(self,
+                 vocab_size: int,
+                 context_length: int,
+                 d_model: int,
+                 num_layers: int,
+                 num_heads: int,
+                 d_ff: int,
+                 rope_theta: float,
+                 weights: dict[str, Tensor]=None,
+                 device: torch.device=torch.device('cpu'),
+                 dtype: torch.dtype=torch.float32):
+        super(Transformer,self).__init__()
+
+        self.vocab_size=vocab_size
+        self.context_length=context_length
+        self.d_model=d_model
+        self.num_layers=num_layers
+        self.num_heads=num_heads
+        self.d_ff=d_ff
+        self.rope_theta=rope_theta
+
+        if weights is None:
+            self.weights={
+                'token_embeddings.weight': nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype)),
+                'ln_final.weight': nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype)),
+                'lm_head.weight': nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype))
+            }
+            for layer in range(num_layers):
+                self.weights.update({
+                    f"layers.{layer}.ln1.weight": nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype)),
+                    f"layers.{layer}.ln2.weight": nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype)),
+                    f"layers.{layer}.ffn.w1.weight": nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype)),
+                    f"layers.{layer}.ffn.w2.weight": nn.Parameter(torch.randn((d_model, d_ff), device=device, dtype=dtype)),
+                    f"layers.{layer}.ffn.w3.weight": nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype)),
+                    f"layers.{layer}.attn.q_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
+                    f"layers.{layer}.attn.k_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
+                    f"layers.{layer}.attn.v_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
+                    f"layers.{layer}.attn.output_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
+                })
+
+            # self.weights={}
+            # self.weights["token_embeddings.weight"]=nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype))
+            # self.weights["ln_final.weight"]=nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype))
+            # self.weights["lm_head.weight"]=nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype))
+            # for layer in range(num_layers):
+            #     self.weights[f"layers.{layer}.ln1.weight"]=nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype))
+            #     self.weights[f"layers.{layer}.ln2.weight"]=nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype))    
+            #     self.weights[f"layers.{layer}.ffn.w1.weight"]=nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype))
+            #     self.weights[f"layers.{layer}.ffn.w2.weight"]=nn.Parameter(torch.randn((d_model, d_ff), device=device, dtype=dtype))
+            #     self.weights[f"layers.{layer}.ffn.w3.weight"]=nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype))
+            #     self.weights[f"layers.{layer}.attn.q_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))    
+            #     self.weights[f"layers.{layer}.attn.k_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))
+            #     self.weights[f"layers.{layer}.attn.v_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))
+            #     self.weights[f"layers.{layer}.attn.output_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))
+
+        else:
+            self.weights=weights
+
+        self.device=device
+        self.dtype=dtype
+
+    def forward(self, in_indices: Int[Tensor, " batch_size sequence_length"]) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
+        return transformer_lm(
+            vocab_size =self.vocab_size,
+            context_length =self.context_length,
+            d_model =self.d_model,
+            num_layers =self.num_layers,
+            num_heads =self.num_heads,
+            d_ff =self.d_ff,
+            rope_theta =self.rope_theta,
+            weights ={k: (v.detach() if isinstance(v, torch.nn.Parameter) else v) for k, v in self.weights.items()},
+            in_indices =in_indices.to(self.device)
+        )

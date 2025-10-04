@@ -16,7 +16,7 @@ def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, it
     }
     torch.save(checkpoint_dict, out)
     
-def load_checkpoint(src: str, model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> None:  
+def load_checkpoint(src: str, model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> int:  
     """
     Load the model and optimizer state from a checkpoint file.
 

@@ -1,26 +1,32 @@
+import pickle
 import datetime
 import os.path
 import argparse
 import torch
+import torch.nn as nn
 # from tokenizers import Tokenizer
-from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW
-from cs336_basics.model import scaled_dot_product_attention, \
-softmax, \
-multihead_self_attention, \
-multihead_self_attention_with_rope, \
-transformer_block, \
-transformer_lm, \
+from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW, Transformer
+from cs336_basics.model import \
 cross_entropy, \
 learning_rate_schedule, \
 gradient_clipping 
+from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.dataloader import get_batch
 from cs336_basics.checkpoint import save_checkpoint, load_checkpoint
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a Transformer language model.")
 
-    # data and checkpointing
-    parser.add_argument('--data', type=str, default=f"data/{str(datetime.datetime.now()).replace(':','_')}", help='Path to the training data file.')
+    # data directory and training/eval files
+    parser.add_argument('--data', type=str, default="data/TinyStoriesV2/", help='Path to the training data file.')
+    parser.add_argument('--training_data', type=str, default='TinyStoriesV2-GPT4-train.txt', help='Training data file name inside the data directory.')
+    parser.add_argument('--eval_data', type=str, default='TinyStoriesV2-GPT4-valid.txt', help='Evaluation data file name inside the data directory.')
+
+    # tokenizer directory
+    parser.add_argument('--tokenizer_data', type=str, default='tokenizer_data/', help='Subdir within data dir that contains containing tokenizer data: vocab.pkl, merges.pkl, special_tokens.pkl and tokenized_data.pkl')
+
+    # output directory
+    parser.add_argument('--output', type=str, default=f"output/{str(datetime.datetime.now()).replace(':','_')}/", help='Directory to save checkpoints.')
 
     # data hyperparameters
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training.')
@@ -32,25 +38,25 @@ def parse_args():
     parser.add_argument('--n_heads', type=int, default=8, help='Number of attention heads.')
     parser.add_argument('--d_model', type=int, default=512, help='Dimension of model embeddings.')
     parser.add_argument('--d_ff', type=int, default=2048, help='Dimension of feedforward network.')
-    parser.add_argument('--dropout', type=float, default=0.1, help='Dropout rate.')
 
     # optimization hyperparameters
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Initial learning rate.')
     parser.add_argument('--lr_schedule_max_lr', type=float, default=1e-3, help='Maximum learning rate for learning rate schedule.')
     parser.add_argument('--lr_schedule_min_lr', type=float, default=1e-5, help='Minimum learning rate for learning rate schedule.')
-    parser.add_argument('--lr_schedule_warmup_iters', type=int, default=1000, help='Number of warmup iterations for learning rate schedule.')
-    parser.add_argument('--lr_schedule_total_iters', type=int, default=10000, help='Total number of iterations for learning rate schedule.')
+    parser.add_argument('--lr_schedule_warmup_iters', type=int, default=150, help='Number of warmup iterations for learning rate schedule.')
+    parser.add_argument('--lr_schedule_total_iters', type=int, default=1000, help='Total number of iterations for learning rate schedule.')
 
     # other hyperparameters
     parser.add_argument('--max_grad_norm', type=float, default=1.0, help='Maximum gradient norm for clipping.')
     parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility.')
     parser.add_argument('--device', type=str, default='cpu', help='Device to use for training (cpu or cuda).')
+    parser.add_argument('--dtype', type=str, default='float32', help='Data type for model parameters (float32, float16, bfloat16).')
 
     # training control
-    parser.add_argument('--max_iters', type=int, default=10000, help='Maximum number of training iterations.')
-    parser.add_argument('--eval_every', type=int, default=500, help='Evaluate model every N iterations.')
-    parser.add_argument('--save_every', type=int, default=1000, help='Save checkpoint every N iterations.')
-    parser.add_argument('--log_every', type=int, default=100, help='Log training metrics every N iterations.')
+    parser.add_argument('--max_iters', type=int, default=1000, help='Maximum number of training iterations.')
+    parser.add_argument('--eval_every', type=int, default=50, help='Evaluate model every N iterations.')
+    parser.add_argument('--save_every', type=int, default=20, help='Save checkpoint every N iterations.')
+    parser.add_argument('--log_every', type=int, default=5, help='Log training metrics every N iterations.')
     parser.add_argument('--resume', type=str, default=None, help='Path to a checkpoint to resume training from.')
 
     return parser.parse_args()
@@ -61,7 +67,8 @@ def main():
 
     # create directory for saving checkpoints if it doesn't exist
     dir_data=os.path.dirname(args.data)
-    dir_checkpoints=os.path.join(dir_data, 'checkpoints')
+    dir_output=os.path.dirname(args.output)
+    dir_checkpoints=os.path.join(dir_output, 'checkpoints')
     if not os.path.exists(dir_checkpoints):
         os.makedirs(dir_checkpoints)
 
@@ -70,75 +77,157 @@ def main():
         torch.manual_seed(args.seed)
         if args.device.startswith('cuda'):
             torch.cuda.manual_seed_all(args.seed)
+    
+    # Output hyperparameters
+    print("Training configuration:")
+    for arg in vars(args):
+        print(f"  {arg}: {getattr(args, arg)}")
 
     # Create Model
-    # TODO: update model parameters to match the model
-    model=transformer_lm(vocab_size=args.vocab_size,  # Example vocab size
+    device = torch.device(args.device)
+    dtype = {'float32': torch.float32, 'float16': torch.float16, 'bfloat16': torch.bfloat16}[args.dtype]
+    
+    weights={
+        'token_embeddings.weight': nn.Parameter(torch.randn((args.vocab_size, args.d_model), device=device, dtype=dtype)),
+        'ln_final.weight': nn.Parameter(torch.randn((args.d_model,), device=device, dtype=dtype)),
+        'lm_head.weight': nn.Parameter(torch.randn((args.vocab_size, args.d_model), device=device, dtype=dtype))
+    }
+    for layer in range(args.n_layers):
+        weights.update({
+            f"layers.{layer}.ln1.weight": nn.Parameter(torch.randn((args.d_model,), device=device, dtype=dtype)),
+            f"layers.{layer}.ln2.weight": nn.Parameter(torch.randn((args.d_model,), device=device, dtype=dtype)),
+            f"layers.{layer}.ffn.w1.weight": nn.Parameter(torch.randn((args.d_ff, args.d_model), device=device, dtype=dtype)),
+            f"layers.{layer}.ffn.w2.weight": nn.Parameter(torch.randn((args.d_model, args.d_ff), device=device, dtype=dtype)),
+            f"layers.{layer}.ffn.w3.weight": nn.Parameter(torch.randn((args.d_ff, args.d_model), device=device, dtype=dtype)),
+            f"layers.{layer}.attn.q_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
+            f"layers.{layer}.attn.k_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
+            f"layers.{layer}.attn.v_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
+            f"layers.{layer}.attn.output_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
+        })
+
+    model=Transformer(vocab_size=args.vocab_size,  # Example vocab size
                          context_length=args.context_length,
-                         n_layers=args.n_layers,
-                         n_heads=args.n_heads,
+                         num_layers=args.n_layers,
+                         num_heads=args.n_heads,
                          d_model=args.d_model,
                          d_ff=args.d_ff,
-                         dropout=args.dropout,
-                         device=args.device)
-    model.to(args.device)
-    model=torch.compile(model)  # Optional: Compile the model for performance
+                         rope_theta=100000,
+                         weights=weights
+                         )
 
+    # TODO: fix the compile error:
+    # Traceback (most recent call last):
+    #   File "/DATA/Sync/Files/Programming/AI_ML/CS336/github/cs336-ass1/scripts/train_model_cli.py", line 147, in <module>
+    #     main()
+    #   File "/DATA/Sync/Files/Programming/AI_ML/CS336/github/cs336-ass1/scripts/train_model_cli.py", line 85, in main
+    #     model=torch.compile(model)  # Optional: Compile the model for performance
+    #           ^^^^^^^^^^^^^^^^^^^^
+    #   File "/DATA/Sync/Files/Programming/AI_ML/CS336/github/cs336-ass1/.venv/lib/python3.11/site-packages/torch/__init__.py", line 2565, in compile
+    #     return torch._dynamo.optimize(
+    #            ^^^^^^^^^^^^^^^^^^^^^^^
+    #   File "/DATA/Sync/Files/Programming/AI_ML/CS336/github/cs336-ass1/.venv/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 512, in __call__
+    #     assert callable(fn)
+    # AssertionError
+    #
+    # model=torch.compile(model)  # Optional: Compile the model for performance
+
+    weights_adam=[]
+    for k, v in weights.items():
+        if v.requires_grad:
+            weights_adam.append(v)
     # Create optimizer
-    optimizer=AdamW(model.parameters(), lr=args.learning_rate)
+    optimizer=AdamW(weights_adam, lr=args.learning_rate)
+    # optimizer=AdamW(nn.ParameterDict({k.replace(".","_"):(v.detach() if isinstance(v, torch.nn.Parameter) else v) for k, v in weights.items()}),
+    #                 lr=args.learning_rate)
     
     # Load Checkpoint?
     if args.resume is not None:
-        file_checkpoints_resume=os.path.join(dir_checkpoints, args.resume)
+        file_checkpoints_resume=os.path.join(".", args.resume)
         # Load model and optimizer state from checkpoint
-        load_checkpoint(src=file_checkpoints_resume, model=model, optimizer=optimizer)
+        loaded_iter=load_checkpoint(src=file_checkpoints_resume, model=model, optimizer=optimizer)
+        print(f"Resumed model and optimizer state from checkpoint {file_checkpoints_resume}")
         
     # Prepare Data
-    file_data=os.path.join(dir_data, "sample.txt")
-    with open(file_data, 'r', encoding='utf-8') as f:
-        text = f.read()
+    # see if tokenized data already exists
+    tokenized_data_path = os.path.join(dir_data, args.tokenizer_data)
+    tokenized_data_file = os.path.join(tokenized_data_path, 'tokenized_data.pkl')
+    if os.path.exists(tokenized_data_file):
+        # tokenized data already exists
+        print(f"Tokenized data found in {tokenized_data_file}")
+        dataset = pickle.load(open(tokenized_data_file, 'rb'))
+        print(f"Loaded tokenized data with {len(dataset)} tokens")
+    else:
+        # tokenized data does not exist
+        # Tokenize data and save tokenized version for future use
+        print(f"Tokenized data not found at {tokenized_data_file}, tokenizing from raw data.")
+        file_data=os.path.join(dir_data, args.training_data)  # Assuming the data file is named 'data_train.txt' 
+        with open(file_data, 'r', encoding='utf-8') as f:
+            text = f.read()
+        print(f"Loaded training data from {file_data} with {len(text)} characters.")
     
-    #tokenize using BPE tokenizer from assignment 1
-    #TODO: need further updates
-    tokenizer = Tokenizer.from_file("tokenizer.json")  # Adjust path as necessary
-    tokens = tokenizer.encode(text).ids
-    dataset = tokens  # Use token IDs as dataset
-    
+        #TODO: write my own tokenizer to understand the performance tuning better
+        tokenizer = Tokenizer.load_from_directory(artifact_dir=tokenized_data_path, use_cython=False )  # Adjust path as necessary
+        tokens = tokenizer.encode(text)
+        dataset = tokens  # Use token IDs as dataset
+        #dump tokenized data for next time usage
+        pickle.dump(dataset, open(tokenized_data_file, 'wb'))
+        print(f"Saved tokenized data to {tokenized_data_file}")
+
     # set model to training mode
     model.train()
+
     # Model Training Loop
-    iter=0
+    if loaded_iter is not None:
+        iter=loaded_iter+1
+    else:
+        iter=0
+
+    # initialize learning rate parm used to decide whether to update lr in optimizer for each iteration
+    lr_old=args.learning_rate
+
     while iter<=args.max_iters:
         if iter%args.log_every==0:
             # Log training metrics
-            pass
+            # TODO: better logging
+            print(f"Iteration {iter}, loss={loss.item() if 'loss' in locals() else 'N/A'}, lr={optimizer.param_groups[0]['lr']}")
         if iter%args.eval_every==0:
             # Evaluate model on validation set
+            # TODO: implement eval
             pass
         if iter%args.save_every==0:
             # Save model checkpoint
-            file_checkpoints=os.path.join(dir_checkpoints, f'context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}_dropout{args.dropout}_batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
+            file_checkpoints=os.path.join(dir_checkpoints, f'context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}__batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
             save_checkpoint(model=model, optimizer=optimizer, iteration=iter, out=file_checkpoints)
+            print(f"Saved checkpoint to {file_checkpoints}")
         # Get batch of data
         x, y = get_batch(dataset=dataset, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
         # Forward pass
         logits = model(x)
         loss = cross_entropy(logits, y)
+
         # Backward pass and optimization
         optimizer.zero_grad()
         loss.backward()
-        # Update learning rate if using a scheduler
-        learning_rate_schedule(optimizer=optimizer, 
-                               iteration=iter,
-                               min_learning_rate=args.lr_schedule_min_lr,
-                               max_learning_rate=args.lr_schedule_max_lr,
-                               warmup_iters=args.lr_schedule_warmup_iters,
-                               total_iters=args.lr_schedule_total_iters)   
+
         # Gradient clipping
         gradient_clipping(model.parameters(), max_l2_norm=args.max_grad_norm)
 
         # update model weights
         optimizer.step()
+
+        # Update learning rate for next iteration if using a scheduler
+        lr_new=learning_rate_schedule(it=iter, 
+                                      min_learning_rate=args.lr_schedule_min_lr,
+                                      max_learning_rate=args.lr_schedule_max_lr,
+                                      warmup_iters=args.lr_schedule_warmup_iters,
+                                      cosine_cycle_iters=args.lr_schedule_total_iters)   
+        if lr_old!=lr_new:
+            # TODO: is this the right way to update learning rate for AdamW?
+            for param_group in optimizer.param_groups:
+                print(f"Next iteration {iter + 1} learning rate update: {param_group['lr']}->{lr_new}")
+                param_group['lr'] = lr_new
+            # optimizer.lr=lr_new
+        lr_old=lr_new
 
         # Increment iteration counter 
         iter+=1
