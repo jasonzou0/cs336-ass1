@@ -1,7 +1,7 @@
 import os
 import torch
 import argparse
-from cs336_basics.model import Transformer
+from cs336_basics.model import TransformerLM
 from cs336_basics.tokenizer import Tokenizer
 
 def parse_args():
@@ -38,8 +38,8 @@ def main():
     # Load the model from the checkpoint
     print(f"Loading model from {args.model}")
     checkpoint = torch.load(args.model)
-    model_args = checkpoint['args']
-    model = Transformer(
+    model_args = checkpoint['model_args']
+    model = TransformerLM(
         vocab_size=model_args.vocab_size,
         context_length=model_args.context_length,
         d_model=model_args.d_model,

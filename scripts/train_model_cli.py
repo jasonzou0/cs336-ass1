@@ -5,7 +5,7 @@ import argparse
 import torch
 import torch.nn as nn
 # from tokenizers import Tokenizer
-from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW, Transformer
+from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW, TransformerLM
 from cs336_basics.model import \
 cross_entropy, \
 learning_rate_schedule, \
@@ -106,36 +106,16 @@ def main():
         print(f"  {arg}: {getattr(args, arg)}")
 
     # Create Model
-    device = torch.device(args.device)
-    dtype = {'float32': torch.float32, 'float16': torch.float16, 'bfloat16': torch.bfloat16}[args.dtype]
-    
-    weights={
-        'token_embeddings.weight': nn.Parameter(torch.randn((args.vocab_size, args.d_model), device=device, dtype=dtype)),
-        'ln_final.weight': nn.Parameter(torch.randn((args.d_model,), device=device, dtype=dtype)),
-        'lm_head.weight': nn.Parameter(torch.randn((args.vocab_size, args.d_model), device=device, dtype=dtype))
-    }
-    for layer in range(args.n_layers):
-        weights.update({
-            f"layers.{layer}.ln1.weight": nn.Parameter(torch.randn((args.d_model,), device=device, dtype=dtype)),
-            f"layers.{layer}.ln2.weight": nn.Parameter(torch.randn((args.d_model,), device=device, dtype=dtype)),
-            f"layers.{layer}.ffn.w1.weight": nn.Parameter(torch.randn((args.d_ff, args.d_model), device=device, dtype=dtype)),
-            f"layers.{layer}.ffn.w2.weight": nn.Parameter(torch.randn((args.d_model, args.d_ff), device=device, dtype=dtype)),
-            f"layers.{layer}.ffn.w3.weight": nn.Parameter(torch.randn((args.d_ff, args.d_model), device=device, dtype=dtype)),
-            f"layers.{layer}.attn.q_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
-            f"layers.{layer}.attn.k_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
-            f"layers.{layer}.attn.v_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
-            f"layers.{layer}.attn.output_proj.weight": nn.Parameter(torch.randn((args.d_model, args.d_model), device=device, dtype=dtype)),
-        })
-
-    model=Transformer(vocab_size=args.vocab_size,  # Example vocab size
-                         context_length=args.context_length,
-                         num_layers=args.n_layers,
-                         num_heads=args.n_heads,
-                         d_model=args.d_model,
-                         d_ff=args.d_ff,
-                         rope_theta=100000,
-                         weights=weights
-                         )
+    model=TransformerLM(vocab_size=args.vocab_size,  # Example vocab size
+                        context_length=args.context_length,
+                        num_layers=args.n_layers,
+                        num_heads=args.n_heads,
+                        d_model=args.d_model,
+                        d_ff=args.d_ff,
+                        rope_theta=100000,
+                        device=torch.device(args.device),
+                        dtype={'float32': torch.float32, 'float16': torch.float16, 'bfloat16': torch.bfloat16}[args.dtype] )
+    torch.compile(model, fullgraph=True)
 
     # TODO: fix the compile error:
     # Traceback (most recent call last):
@@ -153,14 +133,8 @@ def main():
     #
     # model=torch.compile(model)  # Optional: Compile the model for performance
 
-    weights_adam=[]
-    for k, v in weights.items():
-        if v.requires_grad:
-            weights_adam.append(v)
-    # Create optimizer
-    optimizer=AdamW(weights_adam, lr=args.learning_rate)
-    # optimizer=AdamW(nn.ParameterDict({k.replace(".","_"):(v.detach() if isinstance(v, torch.nn.Parameter) else v) for k, v in weights.items()}),
-    #                 lr=args.learning_rate)
+    # AdamW optimizer
+    optimizer=AdamW(model.parameters(), lr=args.learning_rate)
     
     # Load Checkpoint?
     if args.resume is not None:
@@ -168,6 +142,10 @@ def main():
         # Load model and optimizer state from checkpoint
         loaded_iter=load_checkpoint(src=file_checkpoints_resume, model=model, optimizer=optimizer)
         print(f"Resumed model and optimizer state from checkpoint {file_checkpoints_resume}")
+    else:
+        loaded_iter=None
+
+    # Print out summary
     print(f"Model has {sum(p.numel() for p in model.parameters())} parameters")
     print(f"Optimizer has {sum(p.numel() for p in optimizer.param_groups[0]['params'])} parameters")
     print(f"Model parameters:{[name for name, param in model.named_parameters()]}")
@@ -184,26 +162,27 @@ def main():
     model.train()
 
     # Model Training Loop
-    if loaded_iter is not None:
+    if loaded_iter is not None:  # continue from loaded iteration 
         iter=loaded_iter+1
     else:
         iter=0
 
     # initialize learning rate parm used to decide whether to update lr in optimizer for each iteration
     lr_old=args.learning_rate
+    loss=0.0
 
     while iter<=args.max_iters:
         if iter%args.log_every==0:
             # Log training metrics
             # TODO: better logging
-            print(f"Iteration {iter}, loss={loss.item() if 'loss' in locals() else 'N/A'}, lr={optimizer.param_groups[0]['lr']}")
-        if iter%args.eval_every==0:
+            print(f"Iteration {iter}, loss={loss if 'loss' in locals() else 'N/A'}, lr={optimizer.param_groups[0]['lr']}")
+        if iter%args.eval_every==0 and iter>0:
             # Evaluate model on validation set
             # TODO: implement eval
             pass
-        if iter%args.save_every==0:
+        if iter%args.save_every==0 and iter>0:
             # Save model checkpoint
-            file_checkpoints=os.path.join(dir_checkpoints, f'context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}__batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
+            file_checkpoints=os.path.join(dir_checkpoints, f'loss{loss}_context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}__batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
             save_checkpoint(model=model, optimizer=optimizer, iteration=iter, out=file_checkpoints)
             print(f"Saved checkpoint to {file_checkpoints}")
         # Get batch of data
@@ -231,7 +210,7 @@ def main():
         if lr_old!=lr_new:
             # TODO: is this the right way to update learning rate for AdamW?
             for param_group in optimizer.param_groups:
-                print(f"Next iteration {iter + 1} learning rate update: {param_group['lr']}->{lr_new}")
+                print(f"learning rate update for next iteration {iter + 1}: {param_group['lr']}->{lr_new}")
                 param_group['lr'] = lr_new
             # optimizer.lr=lr_new
         lr_old=lr_new

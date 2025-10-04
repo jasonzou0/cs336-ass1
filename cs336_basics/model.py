@@ -519,23 +519,41 @@ class TransformerBlock(nn.Module):
 class TransformerLM(nn.Module):
     """Transformer language model with RoPE positional embeddings.
 
-    The model consists of:
-    1. Token embeddings
-    2. Multiple transformer layers with RoPE
-    3. Final layer normalization
-    4. Output projection to vocabulary
+    Implements a transformer-based language model using Rotary Position Embeddings (RoPE)
+    for position encoding. The architecture follows the standard transformer design with
+    pre-norm blocks and RMSNorm for layer normalization.
 
-    Attributes:
-        embed: Token embedding module
-        layers: List of transformer blocks
-        ln_final: Final layer normalization
-        lm_head: Output projection to vocabulary
-        vocab_size: Size of vocabulary
-        context_length: Maximum sequence length
-        d_model: Model dimension
-        num_heads: Number of attention heads per layer
-        d_ff: Feed-forward inner dimension
-        rope_theta: RoPE parameter
+    Architecture:
+        1. Token embeddings lookup table
+        2. Stack of transformer blocks with:
+           - Multi-head self attention with RoPE
+           - Feed-forward network with SwiGLU activation
+        3. Final layer normalization
+        4. Linear projection to vocabulary size
+
+    Args:
+        vocab_size: Number of tokens in the vocabulary
+        context_length: Maximum sequence length the model can process
+        d_model: Size of the model's hidden dimensions
+        num_layers: Number of transformer blocks in the stack
+        num_heads: Number of attention heads in each block
+        d_ff: Dimension of the feed-forward network's hidden layer
+        rope_theta: Base value for RoPE frequency calculations
+        device: Computation device (default: 'cpu')
+        dtype: Model's data type (default: torch.float32)
+
+    Example:
+        >>> model = TransformerLM(
+        ...     vocab_size=50257,
+        ...     context_length=1024,
+        ...     d_model=768,
+        ...     num_layers=12,
+        ...     num_heads=12,
+        ...     d_ff=3072,
+        ...     rope_theta=10000.0
+        ... )
+        >>> tokens = torch.randint(0, vocab_size, (1, 512))  # Batch of 1, length 512
+        >>> logits = model(tokens)  # Shape: (1, 512, 50257)
     """
     def __init__(self,
                 vocab_size: int,
@@ -591,7 +609,7 @@ class TransformerLM(nn.Module):
             weights: Dictionary containing model weights
         """
         # Load token embeddings
-        self.embed.weight.data = weights['token_embeddings.weight']
+        self.embed.load_state_dict({'weight': weights['token_embeddings.weight']})
         
         # Load transformer layers
         for i, layer in enumerate(self.layers):
@@ -832,74 +850,3 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
             if grad_norm > max_l2_norm:
                 parameter.grad.data = parameter.grad.data * (max_l2_norm / (total_norm+eps))
             
-
-class Transformer(nn.Module):
-    """Wrapper class for TransformerLM that handles weight initialization and management.
-
-    This class provides backwards compatibility with the original implementation
-    while using the more modular TransformerLM class internally.
-    """
-    def __init__(self,
-                 vocab_size: int,
-                 context_length: int,
-                 d_model: int,
-                 num_layers: int,
-                 num_heads: int,
-                 d_ff: int,
-                 rope_theta: float,
-                 weights: dict[str, Tensor]=None,
-                 device: torch.device=torch.device('cpu'),
-                 dtype: torch.dtype=torch.float32):
-        super().__init__()
-
-        # Create the transformer language model
-        self.model = TransformerLM(
-            vocab_size=vocab_size,
-            context_length=context_length,
-            d_model=d_model,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            d_ff=d_ff,
-            rope_theta=rope_theta,
-            device=device,
-            dtype=dtype
-        )
-
-        # Initialize or load weights
-        if weights is None:
-            # Initialize new weights
-            self.weights = {
-                'token_embeddings.weight': self.model.embed.weight,
-                'ln_final.weight': self.model.ln_final.weight,
-                'lm_head.weight': self.model.lm_head.weight
-            }
-            for i, layer in enumerate(self.model.layers):
-                self.weights.update({
-                    f"layers.{i}.ln1.weight": layer.ln1.weight,
-                    f"layers.{i}.ln2.weight": layer.ln2.weight,
-                    f"layers.{i}.ffn.w1.weight": layer.ff.weight1,
-                    f"layers.{i}.ffn.w2.weight": layer.ff.weight2,
-                    f"layers.{i}.ffn.w3.weight": layer.ff.weight3,
-                    f"layers.{i}.attn.q_proj.weight": layer.attention.q_proj.weight,
-                    f"layers.{i}.attn.k_proj.weight": layer.attention.k_proj.weight,
-                    f"layers.{i}.attn.v_proj.weight": layer.attention.v_proj.weight,
-                    f"layers.{i}.attn.output_proj.weight": layer.attention.o_proj.weight,
-                })
-        else:
-            # Load provided weights
-            self.weights = weights
-            self.model.load_from_weights(weights)
-
-        self.device = device
-        self.dtype = dtype
-
-    def forward(self, in_indices: Int[Tensor, "batch_size sequence_length"]) -> Float[Tensor, "batch_size sequence_length vocab_size"]:
-        """Forward pass of the transformer model.
-
-        Args:
-            in_indices: Input token indices
-
-        Returns:
-            Next-token logits
-        """
-        return self.model(in_indices.to(self.device))
