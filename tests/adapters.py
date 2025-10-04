@@ -12,13 +12,9 @@ from torch import Tensor
 
 # Import from the proper cs336_basics package
 from cs336_basics.train_bpe import train_bpe
-from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW
+from cs336_basics.model import LinearModule,EmbeddingModule, RMSNormModule, SwiGLUModule, RoPE, AdamW, MultiHeadSelfAttention, MultiHeadSelfAttentionWithRoPE, TransformerBlock, TransformerLM, Transformer
 from cs336_basics.model import scaled_dot_product_attention, \
 softmax, \
-multihead_self_attention, \
-multihead_self_attention_with_rope, \
-transformer_block, \
-transformer_lm, \
 cross_entropy, \
 learning_rate_schedule, \
 gradient_clipping 
@@ -163,15 +159,12 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    return multihead_self_attention(
-        d_model=d_model,
-        num_heads=num_heads,
-        q_proj_weight=q_proj_weight,
-        k_proj_weight=k_proj_weight,
-        v_proj_weight=v_proj_weight,
-        o_proj_weight=o_proj_weight,
-        in_features=in_features,
-    )
+    mhsa=MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, device=q_proj_weight.device, dtype=q_proj_weight.dtype)
+    mhsa.q_proj.load_state_dict({'weight': q_proj_weight})
+    mhsa.k_proj.load_state_dict({'weight': k_proj_weight})
+    mhsa.v_proj.load_state_dict({'weight': v_proj_weight})
+    mhsa.o_proj.load_state_dict({'weight': o_proj_weight})
+    return mhsa(in_features)
     # raise NotImplementedError
 
 
@@ -212,19 +205,30 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    attention_out = multihead_self_attention_with_rope(
-        d_model=d_model,
-        num_heads=num_heads,
-        max_seq_len=max_seq_len,
-        theta=theta,
-        q_proj_weight=q_proj_weight,
-        k_proj_weight=k_proj_weight,
-        v_proj_weight=v_proj_weight,
-        o_proj_weight=o_proj_weight,
-        in_features=in_features,
-        token_positions=token_positions
-    )
-    return attention_out
+    mhsa=MultiHeadSelfAttentionWithRoPE(d_model=d_model, 
+                                        num_heads=num_heads, 
+                                        max_seq_len=max_seq_len,
+                                        theta=theta,
+                                        device=q_proj_weight.device, 
+                                        dtype=q_proj_weight.dtype)
+    mhsa.q_proj.load_state_dict({'weight': q_proj_weight})
+    mhsa.k_proj.load_state_dict({'weight': k_proj_weight})
+    mhsa.v_proj.load_state_dict({'weight': v_proj_weight})
+    mhsa.o_proj.load_state_dict({'weight': o_proj_weight})
+    return mhsa(in_features)
+    # attention_out = multihead_self_attention_with_rope(
+    #     d_model=d_model,
+    #     num_heads=num_heads,
+    #     max_seq_len=max_seq_len,
+    #     theta=theta,
+    #     q_proj_weight=q_proj_weight,
+    #     k_proj_weight=k_proj_weight,
+    #     v_proj_weight=v_proj_weight,
+    #     o_proj_weight=o_proj_weight,
+    #     in_features=in_features,
+    #     token_positions=token_positions
+    # )
+    # return attention_out
 
 
     # raise NotImplementedError
@@ -324,15 +328,16 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    return transformer_block(
-        d_model=d_model,
-        num_heads=num_heads,
-        d_ff=d_ff,
-        max_seq_len=max_seq_len,
-        theta=theta,
-        weights=weights,
-        in_features=in_features
-    )
+    # in_features=in_features.to(torch.float64)
+    tb=TransformerBlock(d_model=d_model, 
+                        num_heads=num_heads, 
+                        d_ff=d_ff, 
+                        max_seq_len=max_seq_len, 
+                        theta=theta, 
+                        device=in_features.device, 
+                        dtype=in_features.dtype)
+    tb.load_from_weights(weights)
+    return tb(in_features)
     # raise NotImplementedError
 
 
@@ -415,17 +420,17 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    return transformer_lm(
-        vocab_size=vocab_size,
+    tlm=TransformerLM(
+        vocab_size=vocab_size, 
         context_length=context_length,
         d_model=d_model,
         num_layers=num_layers,
         num_heads=num_heads,
         d_ff=d_ff,
         rope_theta=rope_theta,
-        weights=weights,
-        in_indices=in_indices
-    )
+        )
+    tlm.load_from_weights(weights)
+    return tlm(in_indices)
     # raise NotImplementedError
 
 

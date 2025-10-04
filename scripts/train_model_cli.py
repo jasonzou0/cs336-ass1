@@ -61,6 +61,28 @@ def parse_args():
 
     return parser.parse_args()
 
+def load_data_and_tokenize(data_file: str, tokenizer: Tokenizer, tokenized_data_file: str) -> list[int]:
+    if os.path.exists(tokenized_data_file):
+        # tokenized data already exists
+        print(f"Tokenized data found in {tokenized_data_file}")
+        dataset = pickle.load(open(tokenized_data_file, 'rb'))
+        print(f"Loaded tokenized data with {len(dataset)} tokens")
+        return dataset
+    else:
+        # tokenized data does not exist
+        # Tokenize data and save tokenized version for future use
+        print(f"Tokenized data not found at {tokenized_data_file}, tokenizing from raw data.")
+        with open(data_file, 'r', encoding='utf-8') as f:
+            text = f.read()
+        print(f"Loaded training data from {data_file} with {len(text)} characters.")
+    
+        #TODO: write my own tokenizer to understand the performance tuning better
+        tokens = tokenizer.encode(text)
+        dataset = tokens  # Use token IDs as dataset
+        #dump tokenized data for next time usage
+        pickle.dump(dataset, open(tokenized_data_file, 'wb'))
+        print(f"Saved tokenized data to {tokenized_data_file}")
+
 def main():
     # Parse arguments (e.g., using argparse)
     args=parse_args()
@@ -146,32 +168,17 @@ def main():
         # Load model and optimizer state from checkpoint
         loaded_iter=load_checkpoint(src=file_checkpoints_resume, model=model, optimizer=optimizer)
         print(f"Resumed model and optimizer state from checkpoint {file_checkpoints_resume}")
+    print(f"Model has {sum(p.numel() for p in model.parameters())} parameters")
+    print(f"Optimizer has {sum(p.numel() for p in optimizer.param_groups[0]['params'])} parameters")
+    print(f"Model parameters:{[name for name, param in model.named_parameters()]}")
         
     # Prepare Data
     # see if tokenized data already exists
     tokenized_data_path = os.path.join(dir_data, args.tokenizer_data)
     tokenized_data_file = os.path.join(tokenized_data_path, 'tokenized_data.pkl')
-    if os.path.exists(tokenized_data_file):
-        # tokenized data already exists
-        print(f"Tokenized data found in {tokenized_data_file}")
-        dataset = pickle.load(open(tokenized_data_file, 'rb'))
-        print(f"Loaded tokenized data with {len(dataset)} tokens")
-    else:
-        # tokenized data does not exist
-        # Tokenize data and save tokenized version for future use
-        print(f"Tokenized data not found at {tokenized_data_file}, tokenizing from raw data.")
-        file_data=os.path.join(dir_data, args.training_data)  # Assuming the data file is named 'data_train.txt' 
-        with open(file_data, 'r', encoding='utf-8') as f:
-            text = f.read()
-        print(f"Loaded training data from {file_data} with {len(text)} characters.")
-    
-        #TODO: write my own tokenizer to understand the performance tuning better
-        tokenizer = Tokenizer.load_from_directory(artifact_dir=tokenized_data_path, use_cython=False )  # Adjust path as necessary
-        tokens = tokenizer.encode(text)
-        dataset = tokens  # Use token IDs as dataset
-        #dump tokenized data for next time usage
-        pickle.dump(dataset, open(tokenized_data_file, 'wb'))
-        print(f"Saved tokenized data to {tokenized_data_file}")
+    training_data_file=os.path.join(dir_data, args.training_data)  # Assuming the data file is named 'data_train.txt' 
+    tokenizer=Tokenizer.load_from_directory(tokenized_data_path, use_cython=False)
+    dataset_train=load_data_and_tokenize(data_file=training_data_file, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file)
 
     # set model to training mode
     model.train()
@@ -200,7 +207,7 @@ def main():
             save_checkpoint(model=model, optimizer=optimizer, iteration=iter, out=file_checkpoints)
             print(f"Saved checkpoint to {file_checkpoints}")
         # Get batch of data
-        x, y = get_batch(dataset=dataset, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
+        x, y = get_batch(dataset=dataset_train, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
         # Forward pass
         logits = model(x)
         loss = cross_entropy(logits, y)

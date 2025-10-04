@@ -34,7 +34,8 @@ class EmbeddingModule(nn.Module):
         super(EmbeddingModule,self).__init__()
         # Initialize weights with normal distribution
         # Using standard deviation of 0.02 which is common for transformer embeddings
-        self.weight = nn.Parameter(torch.empty((num_embeddings, embedding_dim), device=device, dtype=dtype))
+        print(f"!!!dtype=={dtype}")
+        self.weight = nn.Parameter(torch.zeros((num_embeddings, embedding_dim),device=device,dtype=dtype))
         torch.nn.init.normal_(self.weight, mean=0.0, std=0.02)
 
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
@@ -66,6 +67,10 @@ class SwiGLUModule(nn.Module):
     Projects input to a larger dimension, applies SwiGLU activation,
     then projects back to the original dimension.
     """
+    weight1: nn.Parameter
+    weight2: nn.Parameter
+    weight3: nn.Parameter
+    
     def __init__(self, 
                 d_model: int, 
                 d_ff: int,
@@ -301,288 +306,328 @@ def scaled_dot_product_attention(
     
     return output
 
-def multihead_self_attention(
-    d_model: int,
-    num_heads: int, 
-    q_proj_weight: Float[Tensor, "d_k d_in"],
-    k_proj_weight: Float[Tensor, "d_k d_in"],
-    v_proj_weight: Float[Tensor, "d_v d_in"],
-    o_proj_weight: Float[Tensor, "d_model d_v"],
-    in_features: Float[Tensor, "... sequence_length d_in"],
-) -> Float[Tensor, "... sequence_length d_out"]:
-    """
-    Compute multi-head self-attention with optimized batched implementation.
+class MultiHeadSelfAttention(nn.Module):
+    """Multi-head self attention module with causal masking.
 
-    Args:
-        d_model: Dimensionality of the model input/output
+    Attributes:
+        d_model: Model dimension
         num_heads: Number of attention heads
-        q_proj_weight: Query projection weights (d_k x d_in) 
-        k_proj_weight: Key projection weights (d_k x d_in)
-        v_proj_weight: Value projection weights (d_v x d_in)
-        o_proj_weight: Output projection weights (d_model x d_v)
-        in_features: Input tensor
-
-    Returns:
-        Tensor with the same shape as input but last dimension is d_out
+        d_head: Dimension per head (d_model // num_heads)
+        q_proj: Query projection layer
+        k_proj: Key projection layer
+        v_proj: Value projection layer
+        o_proj: Output projection layer
     """
-    # Get shape info and validate dimensions
-    batch_size, seq_len, d_in = in_features.shape
-    d_head = d_model // num_heads
-    assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+    def __init__(self,
+                d_model: int,
+                num_heads: int,
+                device: torch.device = torch.device('cpu'),
+                dtype: torch.dtype = torch.float32):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_head = d_model // num_heads
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
 
-    # Linear projections in batch for all heads at once
-    Q = in_features @ q_proj_weight.T  # (batch, seq, d_model)
-    K = in_features @ k_proj_weight.T
-    V = in_features @ v_proj_weight.T
+        # Initialize projection layers
+        self.q_proj = LinearModule(d_model, d_model, device=device, dtype=dtype)
+        self.k_proj = LinearModule(d_model, d_model, device=device, dtype=dtype)
+        self.v_proj = LinearModule(d_model, d_model, device=device, dtype=dtype)
+        self.o_proj = LinearModule(d_model, d_model, device=device, dtype=dtype)
 
-    # Q = in_features.transpose(-2,-1) @ q_proj_weight  # (batch, seq, d_model)
-    # K = in_features.transpose(-2,-1) @ k_proj_weight
-    # V = in_features.transpose(-2,-1) @ v_proj_weight
+    def forward(self, x: Float[Tensor, "... sequence_length d_model"]) -> Float[Tensor, "... sequence_length d_model"]:
+        """
+        Compute multi-head self-attention with causal masking.
 
+        Args:
+            x: Input tensor of shape (..., sequence_length, d_model)
 
-    # Reshape Q, K, V into heads
-    Q = Q.view(batch_size, seq_len, num_heads, d_head).permute(0, 2, 1, 3)  # (batch, head, seq, d_head)
-    K = K.view(batch_size, seq_len, num_heads, d_head).permute(0, 2, 1, 3)
-    V = V.view(batch_size, seq_len, num_heads, d_head).permute(0, 2, 1, 3)
+        Returns:
+            Output tensor of shape (..., sequence_length, d_model)
+        """
+        # Get shape info
+        batch_size, seq_len, _ = x.shape
 
-    # Create causal mask to prevent attending to future tokens
-    # Shape: (1, 1, seq_len, seq_len)
-    causal_mask = torch.ones(seq_len, seq_len, dtype=torch.bool, device=Q.device).triu(diagonal=1).logical_not()
-    causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimensions
-    causal_mask = causal_mask.expand(batch_size, num_heads, seq_len, seq_len)
+        # Linear projections
+        Q = self.q_proj(x)  # (batch, seq, d_model)
+        K = self.k_proj(x)
+        V = self.v_proj(x)
 
-    # Compute attention
-    attn_output = scaled_dot_product_attention(Q, K, V, mask=causal_mask)  # (batch, head, seq, d_head)
+        # Reshape into heads
+        Q = Q.view(batch_size, seq_len, self.num_heads, self.d_head).permute(0, 2, 1, 3)  # (batch, head, seq, d_head)
+        K = K.view(batch_size, seq_len, self.num_heads, self.d_head).permute(0, 2, 1, 3)
+        V = V.view(batch_size, seq_len, self.num_heads, self.d_head).permute(0, 2, 1, 3)
 
-    # Reshape back and project to output dimension
-    attn_output = attn_output.permute(0, 2, 1, 3) # (batch, seq, head, d_v)
-    attn_output=attn_output.flatten(-2,-1) #(batch,seq,d_v*head)     
-    # attn_output = attn_output.view(batch_size, seq_len, d_model)  # (batch, seq, d_model)
+        # Create causal mask
+        causal_mask = torch.ones(seq_len, seq_len, dtype=torch.bool, device=x.device).triu(diagonal=1).logical_not()
+        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimensions
+        causal_mask = causal_mask.expand(batch_size, self.num_heads, seq_len, seq_len)
 
-    # Final output projection 
-    output = attn_output @ o_proj_weight.T  # (batch, seq, d_model)
-    return output
+        # Compute attention
+        attn_output = scaled_dot_product_attention(Q, K, V, mask=causal_mask)  # (batch, head, seq, d_head)
+
+        # Reshape and project to output
+        attn_output = attn_output.permute(0, 2, 1, 3)  # (batch, seq, head, d_head)
+        attn_output = attn_output.flatten(-2, -1)  # (batch, seq, d_model)
+        
+        return self.o_proj(attn_output)
     
-def multihead_self_attention_with_rope(
-    d_model: int,
-    num_heads: int,
-    max_seq_len: int,
-    theta: float,
-    q_proj_weight: Float[Tensor, "d_k d_in"],
-    k_proj_weight: Float[Tensor, "d_k d_in"],
-    v_proj_weight: Float[Tensor, "d_v d_in"],
-    o_proj_weight: Float[Tensor, "d_model d_v"],
-    in_features: Float[Tensor, " ... sequence_length d_in"],
-    token_positions: Int[Tensor, " ... sequence_length"] | None = None,
-) -> Float[Tensor, " ... sequence_length d_out"]:
-    """Same as multihead_self_attention but applies RoPE to Q and K after projection.
+class MultiHeadSelfAttentionWithRoPE(MultiHeadSelfAttention):
+    """Multi-head self attention with Rotary Position Embedding (RoPE).
+    
+    Extends MultiHeadSelfAttention to add RoPE functionality. RoPE is applied to queries and keys
+    after their projection but before attention computation.
 
-    Args:
-        d_model (int): Dimensionality of the feedforward input and output.
-        num_heads (int): Number of heads to use in multi-headed attention.
-        max_seq_len (int): Maximum sequence length to pre-cache if your implementation does that.
-        theta (float): RoPE parameter.
-        q_proj_weight (Float[Tensor, "d_k d_in"]): Weights for the Q projection
-        k_proj_weight (Float[Tensor, "d_k d_in"]): Weights for the K projection
-        v_proj_weight (Float[Tensor, "d_v d_in"]): Weights for the V projection
-        o_proj_weight (Float[Tensor, "d_model d_v"]): Weights for the output projection
-        in_features (Float[Tensor, "... sequence_length d_in"]): Input tensor
-        token_positions (Int[Tensor, "... sequence_length"] | None): Optional tensor with the positions of the tokens
-
-    Returns:
-        Float[Tensor, "... sequence_length d_out"]: Output tensor with same shape as input but d_out dimension
+    Attributes:
+        rope: Rotary Position Embedding module
+        max_seq_len: Maximum sequence length for RoPE computation
+        theta: RoPE parameter for frequency calculation
     """
-    # Get shape info and validate dimensions
-    batch_size, seq_len, d_in = in_features.shape
-    d_head = d_model // num_heads
-    assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+    def __init__(self,
+                d_model: int,
+                num_heads: int,
+                max_seq_len: int,
+                theta: float,
+                device: torch.device = torch.device('cpu'),
+                dtype: torch.dtype = torch.float32):
+        super().__init__(d_model, num_heads, device=device, dtype=dtype)
+        self.max_seq_len = max_seq_len
+        self.theta = theta
+        self.rope = RoPE(theta=theta, d_k=self.d_head, max_seq_len=max_seq_len, 
+                        device=device, dtype=dtype)
 
-    # Linear projections in batch for all heads at once
-    Q = in_features @ q_proj_weight.T  # (batch, seq, d_model)
-    K = in_features @ k_proj_weight.T  # (batch, seq, d_model)
-    V = in_features @ v_proj_weight.T  # (batch, seq, d_model)
+    def forward(self, 
+                x: Float[Tensor, "... sequence_length d_model"],
+                token_positions: Int[Tensor, "... sequence_length"] | None = None
+               ) -> Float[Tensor, "... sequence_length d_model"]:
+        """
+        Compute multi-head self-attention with RoPE and causal masking.
 
-    # Reshape Q, K, V for multihead attention:
-    # (batch, seq, d_model) -> (batch, seq, num_heads, d_head)
-    Q = Q.view(batch_size, seq_len, num_heads, d_head)
-    K = K.view(batch_size, seq_len, num_heads, d_head)
-    V = V.view(batch_size, seq_len, num_heads, d_head)
+        Args:
+            x: Input tensor of shape (..., sequence_length, d_model)
+            token_positions: Optional tensor with token positions for RoPE
 
-    # Apply RoPE to each head's queries and keys
-    # Initialize ROPE module for the head dimension
-    rope = RoPE(theta=theta, d_k=d_head, max_seq_len=max_seq_len, device=Q.device, dtype=Q.dtype)
+        Returns:
+            Output tensor of shape (..., sequence_length, d_model)
+        """
+        # Get shape info
+        batch_size, seq_len, _ = x.shape
 
-    # Reshape to apply RoPE independently to each head
-    # (batch, seq, num_heads, d_head) -> (batch * num_heads, seq, d_head)
-    Q = Q.transpose(1, 2).reshape(batch_size * num_heads, seq_len, d_head)
-    K = K.transpose(1, 2).reshape(batch_size * num_heads, seq_len, d_head)
-    V = V.transpose(1, 2)  # Just need to transpose V to match Q,K shape: (batch, num_heads, seq, d_head)
+        # Linear projections
+        Q = self.q_proj(x)  # (batch, seq, d_model)
+        K = self.k_proj(x)
+        V = self.v_proj(x)
 
-    # Apply RoPE
-    Q = rope(Q,token_positions)  # Apply rotary positional embeddings to queries
-    K = rope(K,token_positions)  # Apply rotary positional embeddings to keys
+        # Reshape Q, K, V for multihead attention
+        Q = Q.view(batch_size, seq_len, self.num_heads, self.d_head)
+        K = K.view(batch_size, seq_len, self.num_heads, self.d_head)
+        V = V.view(batch_size, seq_len, self.num_heads, self.d_head)
 
-    # Reshape back to multihead format
-    # (batch * num_heads, seq, d_head) -> (batch, num_heads, seq, d_head)
-    Q = Q.view(batch_size, num_heads, seq_len, d_head)
-    K = K.view(batch_size, num_heads, seq_len, d_head)
+        # Prepare Q, K for RoPE
+        # (batch, seq, num_heads, d_head) -> (batch * num_heads, seq, d_head)
+        Q = Q.transpose(1, 2).reshape(batch_size * self.num_heads, seq_len, self.d_head)
+        K = K.transpose(1, 2).reshape(batch_size * self.num_heads, seq_len, self.d_head)
+        V = V.transpose(1, 2)  # Just transpose V: (batch, num_heads, seq, d_head)
 
-    # Create causal mask
-    causal_mask = torch.ones(seq_len, seq_len, dtype=torch.bool, device=Q.device).triu(diagonal=1).logical_not()
-    causal_mask = causal_mask.view(1, 1, seq_len, seq_len)
-    causal_mask = causal_mask.expand(batch_size, num_heads, seq_len, seq_len)
+        # Apply RoPE to Q and K
+        Q = self.rope(Q, token_positions)
+        K = self.rope(K, token_positions)
 
-    # Compute attention with RoPE-enhanced Q and K
-    attn_output = scaled_dot_product_attention(Q, K, V, mask=causal_mask)  # (batch, num_heads, seq, d_head)
+        # Reshape back to multihead format
+        Q = Q.view(batch_size, self.num_heads, seq_len, self.d_head)
+        K = K.view(batch_size, self.num_heads, seq_len, self.d_head)
 
-    # Reshape attention output and project to output dimension
-    attn_output = attn_output.transpose(1, 2).flatten(-2,-1)  # (batch, seq, num_heads*d_head)
+        # Create causal mask
+        causal_mask = torch.ones(seq_len, seq_len, dtype=torch.bool, device=x.device).triu(diagonal=1).logical_not()
+        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimensions
+        causal_mask = causal_mask.expand(batch_size, self.num_heads, seq_len, seq_len)
 
-    # Final output projection
-    output = attn_output @ o_proj_weight.T  # (batch, seq, d_model)
-    return output
+        # Compute attention
+        attn_output = scaled_dot_product_attention(Q, K, V, mask=causal_mask)
+
+        # Reshape and project to output
+        attn_output = attn_output.transpose(1, 2)  # (batch, seq, head, d_head)
+        attn_output = attn_output.flatten(-2, -1)  # (batch, seq, d_model)
+
+        return self.o_proj(attn_output)
 
 
-def transformer_block(
-    d_model: int,
-    num_heads: int,
-    d_ff: int,
-    max_seq_len: int,
-    theta: float,
-    weights: dict[str, Tensor],
-    in_features: Float[Tensor, "batch sequence_length d_model"],
-) -> Float[Tensor, "batch sequence_length d_model"]:
+class TransformerBlock(nn.Module):
+    """Pre-norm Transformer block with standard architecture.
+
+    Detailed architecture:
+    LayerNorm -> Self Attention -> Skip Connection -> LayerNorm -> FFN -> Skip Connection
+
+    Attributes:
+        attention: Multi-head self attention layer with RoPE
+        ln1: First layer normalization
+        ln2: Second layer normalization
+        ff: Feed-forward network with SwiGLU activation
     """
-    Given the weights of a pre-norm Transformer block and input features,
-    return the output of running the Transformer block on the input features.
-
-    Args:
-        d_model (int): Dimensionality of the feedforward input/output
-        num_heads (int): Number of attention heads
-        d_ff (int): Feed-forward inner dimension
-        max_seq_len (int): Maximum sequence length for RoPE
-        theta (float): RoPE parameter
-        weights (dict[str, Tensor]): State dict of a transformer block
-        in_features (Float[Tensor, "batch sequence_length d_model"]): Input tensor
-
-    Returns:
-        Float[Tensor, "batch sequence_length d_model"]: Output after transformer block
-    """
-
-    # initialize modules
-    ln1 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=in_features.dtype)
-    ln2 = RMSNormModule(d_model=d_model, device=in_features.device, dtype=in_features.dtype)
-    ff = SwiGLUModule(d_model=d_model, d_ff=d_ff, device=in_features.device, dtype=in_features.dtype)
-    
-    # load weights
-    # TODO: use load_state_dict to do the weights loading???
-    # TODO: trace dtype for every variable
-    # TODO: side by side compare of outputs of each layer from 2 models
-    ln1.weight.data = weights['ln1.weight']
-    ln2.weight.data = weights['ln2.weight']
-    ff.weight1.data = weights['ffn.w1.weight']
-    ff.weight2.data = weights['ffn.w2.weight']
-    ff.weight3.data = weights['ffn.w3.weight']
-
-    # normalize 1
-    ln1_out = ln1(in_features)
-
-    # Multi-head attention with RoPE
-    multihead_attention_out = multihead_self_attention_with_rope(
-        d_model=d_model,
-        num_heads=num_heads,
-        max_seq_len=max_seq_len,
-        theta=theta,
-        q_proj_weight=weights['attn.q_proj.weight'],
-        k_proj_weight=weights['attn.k_proj.weight'],
-        v_proj_weight=weights['attn.v_proj.weight'],
-        o_proj_weight=weights['attn.output_proj.weight'],
-        in_features=ln1_out,
-        token_positions=None 
-    )
-    
-    # RESNET1
-    res1_out = in_features + multihead_attention_out
-    # return res1_out
-
-    # normalize 2
-    ln2_out = ln2(res1_out)
-    
-    # FFN
-    ff_out = ff(ln2_out)
-    
-    # RESNET2
-    res2_out = res1_out + ff_out
-
-    return res2_out
-
-def transformer_lm(
-    vocab_size: int,
-    context_length: int,
-    d_model: int,
-    num_layers: int,
-    num_heads: int,
-    d_ff: int,
-    rope_theta: float,
-    weights: dict[str, Tensor],
-    in_indices: Int[Tensor, " batch_size sequence_length"],
-) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
-    """Run the full transformer language model forward pass.
-
-    Args:
-        vocab_size (int): Size of vocabulary
-        context_length (int): Maximum sequence length
-        d_model (int): Model dimension
-        num_layers (int): Number of transformer layers
-        num_heads (int): Number of attention heads per layer
-        d_ff (int): Feed-forward inner dimension
-        rope_theta (float): RoPE parameter
-        weights (dict[str, Tensor]): Model weights dictionary
-        in_indices (Int[Tensor, "batch_size sequence_length"]): Input token indices
-
-    Returns:
-        Float[Tensor, "batch_size sequence_length vocab_size"]: Next-token logits
-    """
-    # Token embeddings
-    embed = EmbeddingModule(
-        num_embeddings=vocab_size, 
-        embedding_dim=d_model,
-        device=in_indices.device,
-        dtype=torch.float32
-    )
-    embed.weight.data = weights['token_embeddings.weight']
-    hidden = embed(in_indices)
-
-    # Process through all transformer layers
-    for i in range(num_layers):
-        layer_prefix = f'layers.{i}.'
-        layer_weights = {
-            k.replace(layer_prefix, ''): v 
-            for k, v in weights.items() 
-            if k.startswith(layer_prefix)
-        }
-
-        hidden = transformer_block(
+    def __init__(self,
+                d_model: int,
+                num_heads: int,
+                d_ff: int,
+                max_seq_len: int,
+                theta: float,
+                device: torch.device=torch.device('cpu'),
+                dtype: torch.dtype=torch.float32):
+        super().__init__()
+        self.attention = MultiHeadSelfAttentionWithRoPE(
             d_model=d_model,
             num_heads=num_heads,
-            d_ff=d_ff,
-            max_seq_len=context_length,
-            theta=rope_theta,
-            weights=layer_weights,
-            in_features=hidden
+            max_seq_len=max_seq_len,
+            theta=theta,
+            device=device,
+            dtype=dtype
+        )
+        self.ln1 = RMSNormModule(d_model=d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNormModule(d_model=d_model, device=device, dtype=dtype)
+        self.ff = SwiGLUModule(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+
+    def load_from_weights(self, weights: dict[str, Tensor]) -> None:
+        """Load weights from a state dictionary.
+
+        Args:
+            weights: Dictionary containing the weights for this transformer block
+        """
+        self.ln1.load_state_dict({'weight': weights['ln1.weight']})
+        self.ln2.load_state_dict({'weight': weights['ln2.weight']})
+        self.ff.load_state_dict({
+            'weight1': weights['ffn.w1.weight'],
+            'weight2': weights['ffn.w2.weight'],
+            'weight3': weights['ffn.w3.weight']
+        })
+        self.attention.q_proj.load_state_dict({'weight': weights['attn.q_proj.weight']})
+        self.attention.k_proj.load_state_dict({'weight': weights['attn.k_proj.weight']})
+        self.attention.v_proj.load_state_dict({'weight': weights['attn.v_proj.weight']})
+        self.attention.o_proj.load_state_dict({'weight': weights['attn.output_proj.weight']})
+
+    def forward(self, x: Float[Tensor, "batch sequence_length d_model"]) -> Float[Tensor, "batch sequence_length d_model"]:
+        # First sub-block: Multi-head self attention with Add & Norm
+        ln1_out = self.ln1(x)
+        attn_out = self.attention(ln1_out)
+        res1_out = x + attn_out
+
+        # Second sub-block: Feed forward network with Add & Norm
+        ln2_out = self.ln2(res1_out)
+        ff_out = self.ff(ln2_out)
+        res2_out = res1_out + ff_out
+
+        return res2_out
+
+class TransformerLM(nn.Module):
+    """Transformer language model with RoPE positional embeddings.
+
+    The model consists of:
+    1. Token embeddings
+    2. Multiple transformer layers with RoPE
+    3. Final layer normalization
+    4. Output projection to vocabulary
+
+    Attributes:
+        embed: Token embedding module
+        layers: List of transformer blocks
+        ln_final: Final layer normalization
+        lm_head: Output projection to vocabulary
+        vocab_size: Size of vocabulary
+        context_length: Maximum sequence length
+        d_model: Model dimension
+        num_heads: Number of attention heads per layer
+        d_ff: Feed-forward inner dimension
+        rope_theta: RoPE parameter
+    """
+    def __init__(self,
+                vocab_size: int,
+                context_length: int,
+                d_model: int,
+                num_layers: int,
+                num_heads: int,
+                d_ff: int,
+                rope_theta: float,
+                device: torch.device=torch.device('cpu'),
+                dtype: torch.dtype=torch.float32):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.context_length = context_length
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.rope_theta = rope_theta
+
+        # Token embeddings
+        self.embed = EmbeddingModule(
+            num_embeddings=vocab_size,
+            embedding_dim=d_model,
+            device=device,
+            dtype=dtype
         )
 
-    # Final layer normalization
-    ln_final = RMSNormModule(d_model=d_model, device=hidden.device, dtype=hidden.dtype)
-    ln_final.weight.data = weights['ln_final.weight']
-    hidden = ln_final(hidden)
+        # Transformer layers
+        self.layers = nn.ModuleList([
+            TransformerBlock(
+                d_model=d_model,
+                num_heads=num_heads,
+                d_ff=d_ff,
+                max_seq_len=context_length,
+                theta=rope_theta,
+                device=device,
+                dtype=dtype
+            )
+            for _ in range(num_layers)
+        ])
 
-    # Project to vocabulary
-    lm_head = LinearModule(in_features=d_model, out_features=vocab_size, device=hidden.device, dtype=hidden.dtype)
-    lm_head.weight.data = weights['lm_head.weight']
-    logits = lm_head(hidden)
+        # Final layer normalization
+        self.ln_final = RMSNormModule(d_model=d_model, device=device, dtype=dtype)
 
-    return logits
+        # Output projection to vocabulary
+        self.lm_head = LinearModule(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
+
+    def load_from_weights(self, weights: dict[str, Tensor]) -> None:
+        """Load weights from a state dictionary.
+
+        Args:
+            weights: Dictionary containing model weights
+        """
+        # Load token embeddings
+        self.embed.weight.data = weights['token_embeddings.weight']
+        
+        # Load transformer layers
+        for i, layer in enumerate(self.layers):
+            layer_prefix = f'layers.{i}.'
+            layer_weights = {
+                k.replace(layer_prefix, ''): v 
+                for k, v in weights.items() 
+                if k.startswith(layer_prefix)
+            }
+            layer.load_from_weights(layer_weights)
+
+        # Load final layer norm and output projection
+        self.ln_final.load_state_dict({'weight': weights['ln_final.weight']})
+        self.lm_head.load_state_dict({'weight': weights['lm_head.weight']})
+
+    def forward(self, in_indices: Int[Tensor, "batch_size sequence_length"]) -> Float[Tensor, "batch_size sequence_length vocab_size"]:
+        """Run the transformer language model forward pass.
+
+        Args:
+            in_indices: Input token indices of shape (batch_size, sequence_length)
+
+        Returns:
+            Next-token logits of shape (batch_size, sequence_length, vocab_size)
+        """
+        # Token embeddings
+        hidden = self.embed(in_indices)
+
+        # Process through transformer layers
+        for layer in self.layers:
+            hidden = layer(hidden)
+
+        # Final normalization and projection
+        hidden = self.ln_final(hidden)
+        logits = self.lm_head(hidden)
+
+        return logits
 
 
 def log_softmax(x: Float[Tensor," ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -789,6 +834,11 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
             
 
 class Transformer(nn.Module):
+    """Wrapper class for TransformerLM that handles weight initialization and management.
+
+    This class provides backwards compatibility with the original implementation
+    while using the more modular TransformerLM class internally.
+    """
     def __init__(self,
                  vocab_size: int,
                  context_length: int,
@@ -800,65 +850,56 @@ class Transformer(nn.Module):
                  weights: dict[str, Tensor]=None,
                  device: torch.device=torch.device('cpu'),
                  dtype: torch.dtype=torch.float32):
-        super(Transformer,self).__init__()
+        super().__init__()
 
-        self.vocab_size=vocab_size
-        self.context_length=context_length
-        self.d_model=d_model
-        self.num_layers=num_layers
-        self.num_heads=num_heads
-        self.d_ff=d_ff
-        self.rope_theta=rope_theta
-
-        if weights is None:
-            self.weights={
-                'token_embeddings.weight': nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype)),
-                'ln_final.weight': nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype)),
-                'lm_head.weight': nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype))
-            }
-            for layer in range(num_layers):
-                self.weights.update({
-                    f"layers.{layer}.ln1.weight": nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype)),
-                    f"layers.{layer}.ln2.weight": nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype)),
-                    f"layers.{layer}.ffn.w1.weight": nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype)),
-                    f"layers.{layer}.ffn.w2.weight": nn.Parameter(torch.randn((d_model, d_ff), device=device, dtype=dtype)),
-                    f"layers.{layer}.ffn.w3.weight": nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype)),
-                    f"layers.{layer}.attn.q_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
-                    f"layers.{layer}.attn.k_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
-                    f"layers.{layer}.attn.v_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
-                    f"layers.{layer}.attn.output_proj.weight": nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype)),
-                })
-
-            # self.weights={}
-            # self.weights["token_embeddings.weight"]=nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype))
-            # self.weights["ln_final.weight"]=nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype))
-            # self.weights["lm_head.weight"]=nn.Parameter(torch.randn((vocab_size, d_model), device=device, dtype=dtype))
-            # for layer in range(num_layers):
-            #     self.weights[f"layers.{layer}.ln1.weight"]=nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype))
-            #     self.weights[f"layers.{layer}.ln2.weight"]=nn.Parameter(torch.randn((d_model,), device=device, dtype=dtype))    
-            #     self.weights[f"layers.{layer}.ffn.w1.weight"]=nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype))
-            #     self.weights[f"layers.{layer}.ffn.w2.weight"]=nn.Parameter(torch.randn((d_model, d_ff), device=device, dtype=dtype))
-            #     self.weights[f"layers.{layer}.ffn.w3.weight"]=nn.Parameter(torch.randn((d_ff, d_model), device=device, dtype=dtype))
-            #     self.weights[f"layers.{layer}.attn.q_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))    
-            #     self.weights[f"layers.{layer}.attn.k_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))
-            #     self.weights[f"layers.{layer}.attn.v_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))
-            #     self.weights[f"layers.{layer}.attn.output_proj.weight"]=nn.Parameter(torch.randn((d_model, d_model), device=device, dtype=dtype))
-
-        else:
-            self.weights=weights
-
-        self.device=device
-        self.dtype=dtype
-
-    def forward(self, in_indices: Int[Tensor, " batch_size sequence_length"]) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
-        return transformer_lm(
-            vocab_size =self.vocab_size,
-            context_length =self.context_length,
-            d_model =self.d_model,
-            num_layers =self.num_layers,
-            num_heads =self.num_heads,
-            d_ff =self.d_ff,
-            rope_theta =self.rope_theta,
-            weights ={k: (v.detach() if isinstance(v, torch.nn.Parameter) else v) for k, v in self.weights.items()},
-            in_indices =in_indices.to(self.device)
+        # Create the transformer language model
+        self.model = TransformerLM(
+            vocab_size=vocab_size,
+            context_length=context_length,
+            d_model=d_model,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            d_ff=d_ff,
+            rope_theta=rope_theta,
+            device=device,
+            dtype=dtype
         )
+
+        # Initialize or load weights
+        if weights is None:
+            # Initialize new weights
+            self.weights = {
+                'token_embeddings.weight': self.model.embed.weight,
+                'ln_final.weight': self.model.ln_final.weight,
+                'lm_head.weight': self.model.lm_head.weight
+            }
+            for i, layer in enumerate(self.model.layers):
+                self.weights.update({
+                    f"layers.{i}.ln1.weight": layer.ln1.weight,
+                    f"layers.{i}.ln2.weight": layer.ln2.weight,
+                    f"layers.{i}.ffn.w1.weight": layer.ff.weight1,
+                    f"layers.{i}.ffn.w2.weight": layer.ff.weight2,
+                    f"layers.{i}.ffn.w3.weight": layer.ff.weight3,
+                    f"layers.{i}.attn.q_proj.weight": layer.attention.q_proj.weight,
+                    f"layers.{i}.attn.k_proj.weight": layer.attention.k_proj.weight,
+                    f"layers.{i}.attn.v_proj.weight": layer.attention.v_proj.weight,
+                    f"layers.{i}.attn.output_proj.weight": layer.attention.o_proj.weight,
+                })
+        else:
+            # Load provided weights
+            self.weights = weights
+            self.model.load_from_weights(weights)
+
+        self.device = device
+        self.dtype = dtype
+
+    def forward(self, in_indices: Int[Tensor, "batch_size sequence_length"]) -> Float[Tensor, "batch_size sequence_length vocab_size"]:
+        """Forward pass of the transformer model.
+
+        Args:
+            in_indices: Input token indices
+
+        Returns:
+            Next-token logits
+        """
+        return self.model(in_indices.to(self.device))
