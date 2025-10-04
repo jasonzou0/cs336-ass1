@@ -76,23 +76,26 @@ def load_checkpoint(src: str, model: torch.nn.Module, optimizer: torch.optim.Opt
                         f"(checkpoint: {value}, current: {current_value})"
                     )
 
-    # Update optimizer hyperparameters if available
-    if 'optimizer_args' in checkpoint_dict:
-        for group in optimizer.param_groups:
-            saved_args = checkpoint_dict['optimizer_args']
-            # Update all optimizer parameters except 'params'
-            for key in set(saved_args.keys()) - {'params'}:
-                if key in group:
-                    group[key] = saved_args[key]
-
+    # Load states for model
     # Strip _orig_mod. prefix if present
     print("Cleaning state_dicts for model from compiled model if necessary")
     checkpoint_dict['model_state_dict'] = clean_compiled_state_dict(checkpoint_dict['model_state_dict'])
-    print("Cleaning state_dicts for optimizer from compiled model if necessary")
-    checkpoint_dict['optimizer_state_dict'] = clean_compiled_state_dict(checkpoint_dict['optimizer_state_dict'])
-
-    # Load states
     model.load_state_dict(checkpoint_dict['model_state_dict'])
-    optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
+
+    if optimizer is not None:
+        # Update optimizer hyperparameters if available
+        if 'optimizer_args' in checkpoint_dict:
+            for group in optimizer.param_groups:
+                saved_args = checkpoint_dict['optimizer_args']
+                # Update all optimizer parameters except 'params'
+                for key in set(saved_args.keys()) - {'params'}:
+                    if key in group:
+                        group[key] = saved_args[key]
+
+        # Load states for optimizer
+        print("Cleaning state_dicts for optimizer from compiled model if necessary")
+        checkpoint_dict['optimizer_state_dict'] = clean_compiled_state_dict(checkpoint_dict['optimizer_state_dict'])
+        optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
+
     return checkpoint_dict['iteration']
 

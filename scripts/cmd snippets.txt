@@ -2,7 +2,7 @@ ln -s ../data/ ./data
 ln -s ../output/ ./output
 
 # update best checkpoint to use for inference
-export best_ckpt=$(realpath "./output/2025-10-04 11_14_26.826975/iter1700_loss2.2878000736236572_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 11_36_40.384457.bin")
+export best_ckpt=$(realpath "./output/2025-10-04 12_29_53.238936/iter1850_loss2.3341307640075684_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 12_50_53.992402.bin")
 rm ./output/inference_model.bin && ln -s "$best_ckpt" ./output/inference_model.bin
 uv run scripts/train_bpe_cli.py --input-path data/TinyStoriesV2-GPT4-train.txt --vocab-size 1000 --output-dir output/tonytest_tiny1k_$(date +%F_%H%M%S) --profile
 

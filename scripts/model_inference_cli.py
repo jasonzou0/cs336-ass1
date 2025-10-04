@@ -3,6 +3,7 @@ import torch
 import argparse
 from cs336_basics.model import TransformerLM
 from cs336_basics.tokenizer import Tokenizer
+from cs336_basics.checkpoint import load_checkpoint
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run inference with a trained Transformer Language Model")
@@ -35,8 +36,7 @@ def main():
     args = parse_args()
     print(f"Arguments: {args}")
 
-    # Load the model from the checkpoint
-    print(f"Loading model from {args.model}")
+    # Create model using hyperparameters from checkpoint
     checkpoint = torch.load(args.model)
     model_args = checkpoint['model_args']
     model = TransformerLM(
@@ -51,7 +51,12 @@ def main():
         dtype=torch.float32
     )
 
-    model.load_state_dict(checkpoint['model_state_dict'])
+    print(f"Loading model from {args.model}")
+    file_checkpoint=os.path.join(".", args.model)
+    # Load model and optimizer state from checkpoint
+    loaded_iter=load_checkpoint(src=file_checkpoint, model=model, optimizer=None)
+
+    # model.load_state_dict(checkpoint['model_state_dict'])
 
     # Print out summary
     print(f"Model architecture:")
