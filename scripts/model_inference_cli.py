@@ -40,17 +40,25 @@ def main():
     checkpoint = torch.load(args.model)
     model_args = checkpoint['model_args']
     model = TransformerLM(
-        vocab_size=model_args.vocab_size,
-        context_length=model_args.context_length,
-        d_model=model_args.d_model,
-        num_layers=model_args.n_layers,
-        num_heads=model_args.n_heads,
-        d_ff=model_args.d_ff,
-        rope_theta=model_args.rope_theta,
-        weights=checkpoint['model_state_dict'],
+        vocab_size=model_args['vocab_size'],
+        context_length=model_args['context_length'],
+        d_model=model_args['d_model'],
+        num_layers=model_args['num_layers'],
+        num_heads=model_args['num_heads'],
+        d_ff=model_args['d_ff'],
+        rope_theta=model_args['rope_theta'],
         device=torch.device('cpu'),  # Always load on CPU first
         dtype=torch.float32
     )
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    # Print out summary
+    print(f"Model architecture:")
+    for k,v in model_args.items():
+        print(f"  {k}: {v}")
+    print(f"Model has {sum(p.numel() for p in model.parameters())} parameters")
+    print(f"Model parameters:{[name for name, param in model.named_parameters()]}")
 
     # Initialize tokenizer from the data directory
     tokenizer_dir = os.path.join(args.data,'tokenizer_data/')
@@ -58,7 +66,8 @@ def main():
         raise ValueError(f"Tokenizer directory not found at {tokenizer_dir}")
     
     # Load vocabulary and merges files
-    tokenizer = Tokenizer.load_from_dir(tokenizer_dir)
+    # tokenizer = Tokenizer.load_from_directory(tokenizer_dir,use_cython=False)
+    tokenizer = Tokenizer.load_from_directory(tokenizer_dir)
 
     # Set the model to evaluation mode
     model.eval()
@@ -79,7 +88,7 @@ def main():
                 with torch.no_grad():
                     for _ in range(100):  # Generate up to 100 tokens
                         # Get model predictions
-                        logits = model(context[:, -model_args.context_length:])
+                        logits = model(context[:, -model_args['context_length']:])
                         probs = torch.softmax(logits[:, -1, :], dim=-1)
                         next_token = torch.multinomial(probs, num_samples=1)
 
@@ -111,7 +120,7 @@ def main():
         # Generate tokens
         with torch.no_grad():
             for _ in range(500):  # Generate 500 tokens
-                logits = model(context[:, -model_args.context_length:])
+                logits = model(context[:, -model_args['context_length']:])
                 probs = torch.softmax(logits[:, -1, :], dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
 

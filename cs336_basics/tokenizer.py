@@ -8,6 +8,8 @@ from typing import Iterable, Iterator
 from .bpe_utils import load_artifact
 from .train_bpe import get_pretokenizer
 
+# from .tokenizer_cy import encode_one_tuple_uncached_cy
+# CYTHON_AVAILABLE = True
 # Try to import Cython optimized functions
 try:
     from .tokenizer_cy import encode_one_tuple_uncached_cy
@@ -15,6 +17,7 @@ try:
 except ImportError:
     CYTHON_AVAILABLE = False
     encode_one_tuple_uncached_cy = None
+    print("import error for cython tokenizer, proceeding without cython optimization")
 
 # Note: if we want to parallelize tokenization in the future, pay attention to:
 # 1. the file chunking algorithm should only chunk at word / line boundaries and 

@@ -34,7 +34,6 @@ class EmbeddingModule(nn.Module):
         super(EmbeddingModule,self).__init__()
         # Initialize weights with normal distribution
         # Using standard deviation of 0.02 which is common for transformer embeddings
-        print(f"!!!dtype=={dtype}")
         self.weight = nn.Parameter(torch.zeros((num_embeddings, embedding_dim),device=device,dtype=dtype))
         torch.nn.init.normal_(self.weight, mean=0.0, std=0.02)
 

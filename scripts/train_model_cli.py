@@ -53,11 +53,16 @@ def parse_args():
     parser.add_argument('--dtype', type=str, default='float32', help='Data type for model parameters (float32, float16, bfloat16).')
 
     # training control
-    parser.add_argument('--max_iters', type=int, default=1000, help='Maximum number of training iterations.')
-    parser.add_argument('--eval_every', type=int, default=50, help='Evaluate model every N iterations.')
-    parser.add_argument('--save_every', type=int, default=20, help='Save checkpoint every N iterations.')
+    parser.add_argument('--max_iters', type=int, default=2000, help='Maximum number of training iterations.')
     parser.add_argument('--log_every', type=int, default=5, help='Log training metrics every N iterations.')
-    parser.add_argument('--resume', type=str, default=None, help='Path to a checkpoint to resume training from.')
+    parser.add_argument('--min_loss', type=float, default=0.8, help='Minimum loss value to stop the training loop.')  
+
+    parser.add_argument('--eval_every', type=int, default=50, help='Evaluate model every N iterations.')
+    parser.add_argument('--eval_iters', type=int, default=3, help='Evaluate over this many batches during each evaluation.')
+
+    # checkpoint save/load
+    parser.add_argument('--save_every', type=int, default=50, help='Save checkpoint every N iterations.')
+    parser.add_argument('--checkpoint', type=str, default=None, help='Path to a checkpoint to resume training from.')
 
     return parser.parse_args()
 
@@ -90,9 +95,8 @@ def main():
     # create directory for saving checkpoints if it doesn't exist
     dir_data=os.path.dirname(args.data)
     dir_output=os.path.dirname(args.output)
-    dir_checkpoints=os.path.join(dir_output, 'checkpoints')
-    if not os.path.exists(dir_checkpoints):
-        os.makedirs(dir_checkpoints)
+    if not os.path.exists(dir_output):
+        os.makedirs(dir_output)
 
     # Set random seed for reproducibility
     if args.seed!=0:
@@ -137,11 +141,11 @@ def main():
     optimizer=AdamW(model.parameters(), lr=args.learning_rate)
     
     # Load Checkpoint?
-    if args.resume is not None:
-        file_checkpoints_resume=os.path.join(".", args.resume)
+    if args.checkpoint is not None:
+        file_checkpoint=os.path.join(".", args.checkpoint)
         # Load model and optimizer state from checkpoint
-        loaded_iter=load_checkpoint(src=file_checkpoints_resume, model=model, optimizer=optimizer)
-        print(f"Resumed model and optimizer state from checkpoint {file_checkpoints_resume}")
+        loaded_iter=load_checkpoint(src=file_checkpoint, model=model, optimizer=optimizer)
+        print(f"Resumed model and optimizer state from checkpoint {file_checkpoint}")
     else:
         loaded_iter=None
 
@@ -153,10 +157,11 @@ def main():
     # Prepare Data
     # see if tokenized data already exists
     tokenized_data_path = os.path.join(dir_data, args.tokenizer_data)
-    tokenized_data_file = os.path.join(tokenized_data_path, 'tokenized_data.pkl')
-    training_data_file=os.path.join(dir_data, args.training_data)  # Assuming the data file is named 'data_train.txt' 
+
+    tokenized_data_file_train = os.path.join(tokenized_data_path, 'tokenized_data_train.pkl')
+    data_file_train=os.path.join(dir_data, args.training_data)  # Assuming the data file is named 'data_train.txt' 
     tokenizer=Tokenizer.load_from_directory(tokenized_data_path, use_cython=False)
-    dataset_train=load_data_and_tokenize(data_file=training_data_file, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file)
+    dataset_train=load_data_and_tokenize(data_file=data_file_train, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file_train)
 
     # set model to training mode
     model.train()
@@ -169,24 +174,19 @@ def main():
 
     # initialize learning rate parm used to decide whether to update lr in optimizer for each iteration
     lr_old=args.learning_rate
-    loss=0.0
+    loss=99.99 
 
-    while iter<=args.max_iters:
-        if iter%args.log_every==0:
-            # Log training metrics
-            # TODO: better logging
-            print(f"Iteration {iter}, loss={loss if 'loss' in locals() else 'N/A'}, lr={optimizer.param_groups[0]['lr']}")
-        if iter%args.eval_every==0 and iter>0:
-            # Evaluate model on validation set
-            # TODO: implement eval
-            pass
-        if iter%args.save_every==0 and iter>0:
-            # Save model checkpoint
-            file_checkpoints=os.path.join(dir_checkpoints, f'loss{loss}_context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}__batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
-            save_checkpoint(model=model, optimizer=optimizer, iteration=iter, out=file_checkpoints)
-            print(f"Saved checkpoint to {file_checkpoints}")
+    print(f"Entering training loop...")
+    while True:
+        # End loop conditions
+        if iter>args.max_iters or \
+           loss<args.min_loss:  
+            print(f"Stopping training at iteration {iter} with loss {loss}")
+            break
+
         # Get batch of data
         x, y = get_batch(dataset=dataset_train, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
+
         # Forward pass
         logits = model(x)
         loss = cross_entropy(logits, y)
@@ -198,8 +198,37 @@ def main():
         # Gradient clipping
         gradient_clipping(model.parameters(), max_l2_norm=args.max_grad_norm)
 
-        # update model weights
+        # Update model weights
         optimizer.step()
+
+        # Logging
+        if iter%args.log_every==0:
+            # Log training metrics
+            # TODO: better logging
+            print(f"Iteration {iter}, loss={loss if 'loss' in locals() else 'N/A'}, lr={optimizer.param_groups[0]['lr']}")
+
+        # Save checkpoint
+        if iter%args.save_every==0 and iter>0:
+            # Save model checkpoint
+            file_checkpoints=os.path.join(dir_output, f'iter{iter}_loss{loss}_context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}__batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
+            save_checkpoint(model=model, optimizer=optimizer, iteration=iter, out=file_checkpoints)
+            print(f"Saved checkpoint to {file_checkpoints}")
+
+        # Evaluation
+        if iter%args.eval_every==0 and iter>0:
+            # Evaluate model on validation set
+            # TODO: implement eval
+            tokenized_data_file_eval = os.path.join(tokenized_data_path, 'tokenized_data_eval.pkl')
+            data_file_eval=os.path.join(dir_data, args.eval_data)  # Assuming the data file is named 'data_train.txt' 
+            dataset_eval=load_data_and_tokenize(data_file=data_file_eval, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file_eval)
+            loss_list=[]
+            for _ in range(args.eval_iters):
+                x,y=get_batch(dataset=dataset_eval, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
+                logits=model(x)
+                loss=cross_entropy(logits, y)
+                loss_list.append(loss)
+                print(f"Intermediate eval loss: {loss} ")
+            print(f"Evaluation loss at iteration {iter}: {sum(loss_list)/len(loss_list)}")
 
         # Update learning rate for next iteration if using a scheduler
         lr_new=learning_rate_schedule(it=iter, 

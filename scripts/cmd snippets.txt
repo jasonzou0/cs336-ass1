@@ -21,3 +21,4 @@ uv run scripts/train_bpe_cli.py --input-path tests/fixtures/corpus.en --vocab-si
 
 
 uv run python scripts/train_model_cli.py --resume="output/checkpoints/context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 00_40_19.685851.bin"
+uv run python scripts/train_model_cli.py --checkpoint="output/inference_model.bin" --lr_schedule_total_iters=1500
