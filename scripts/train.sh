@@ -10,7 +10,7 @@ if [ $# -eq 0 ]; then
     --n_layers=4 \
     --n_heads=16 \
     --context_len=256 \
-    --batch_size=16 \
+    --batch_size=64 \
     --save_every=50 \
     --eval_every=100 \
     --max_iters=3000 
@@ -24,7 +24,7 @@ else
     --n_layers=4 \
     --n_heads=16 \
     --context_len=256 \
-    --batch_size=16 \
+    --batch_size=64 \
     --save_every=50 \
     --eval_every=100 \
     --max_iters=3000 \
