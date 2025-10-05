@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument('--dtype', type=str, default='float32', help='Data type for model parameters (float32, float16, bfloat16).')
 
     # training control
-    parser.add_argument('--max_iters', type=int, default=2000, help='Maximum number of training iterations.')
+    parser.add_argument('--max_iters', type=int, default=3000, help='Maximum number of training iterations.')
     parser.add_argument('--log_every', type=int, default=5, help='Log training metrics every N iterations.')
     parser.add_argument('--min_loss', type=float, default=0.8, help='Minimum loss value to stop the training loop.')  
 
@@ -221,6 +221,7 @@ def main():
             data_file_eval=os.path.join(dir_data, args.eval_data)  # Assuming the data file is named 'data_train.txt' 
             dataset_eval=load_data_and_tokenize(data_file=data_file_eval, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file_eval)
             loss_list=[]
+            model.eval()
             for _ in range(args.eval_iters):
                 x,y=get_batch(dataset=dataset_eval, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
                 logits=model(x)
@@ -228,6 +229,7 @@ def main():
                 loss_list.append(loss)
                 print(f"Intermediate eval loss: {loss} ")
             print(f"Evaluation loss at iteration {iter}: {sum(loss_list)/len(loss_list)}")
+            model.train()
 
         # Update learning rate for next iteration if using a scheduler
         lr_new=learning_rate_schedule(it=iter, 
@@ -243,9 +245,6 @@ def main():
             # optimizer.lr=lr_new
         lr_old=lr_new
 
-        # Increment iteration counter 
-        iter+=1
-
         # Logging
         t_it_end=datetime.datetime.now()
         t_it_elapsed=t_it_end-t_it_start
@@ -257,6 +256,10 @@ def main():
                   f"elapse={t_it_elapsed.total_seconds():.3f}s," \
                   f"loss={loss if 'loss' in locals() else 'N/A'},"\
                   f"lr={optimizer.param_groups[0]['lr']}")
+
+        # Increment iteration counter 
+        iter+=1
+
 
     
 if __name__ == "__main__":

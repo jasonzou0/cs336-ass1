@@ -1,9 +1,13 @@
 ln -s ../data/ ./data
 ln -s ../output/ ./output
 
-# update best checkpoint to use for inference
-export best_ckpt=$(realpath "./output/2025-10-04 12_29_53.238936/iter1850_loss2.3341307640075684_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 12_50_53.992402.bin")
-rm ./output/inference_model.bin && ln -s "$best_ckpt" ./output/inference_model.bin
+### update best checkpoint to use for inference
+# export best_ckpt=$(realpath "./output/2025-10-04 12_29_53.238936/iter1850_loss2.3341307640075684_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 12_50_53.992402.bin")
+# rm ./output/inference_model.bin && ln -s "$best_ckpt" ./output/inference_model.bin
+
+./scripts/link_ckpt_as_best_model.sh "output/2025-10-04 13_07_22.592589/iter2000_loss2.4269819259643555_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 13_26_19.037335.bin"
+
+
 uv run scripts/train_bpe_cli.py --input-path data/TinyStoriesV2-GPT4-train.txt --vocab-size 1000 --output-dir output/tonytest_tiny1k_$(date +%F_%H%M%S) --profile
 
 uv run scripts/train_bpe_cli.py --input-path ./data/owt_train.txt --vocab-size 36000 --output-dir output/tonytest_owt36k --profile --load-tokens-counts
@@ -33,3 +37,8 @@ uv run python scripts/train_model_cli.py --lr_schedule_total_iters=1500 --ckpt="
 uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --ckpt="output/inference_model.bin" 
 uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --ckpt="output/inference_model.bin" 
 uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --ckpt="output/2025-10-04 11_57_28.689428/iter1750_loss2.6131703853607178_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 12_07_44.040165.bin"
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --ckpt="output/2025-10-04 12_29_53.238936/iter1900_loss2.5015077590942383_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 13_01_11.282548.bin"
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --ckpt="output/2025-10-04 13_07_22.592589/iter2000_loss2.4269819259643555_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 13_26_19.037335.bin"
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --lr_schedule_min_lr=1e-6 --ckpt="output/2025-10-04 13_52_40.574539/iter3000_loss2.4391403198242188_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 17_06_12.832076.bin"
+ 
+uv run python scripts/train_model_cli.py --lr_schedule_total_iters=3000 --log_every=1 --lr_schedule_min_lr=1e-6 --max_iters=4000 --ckpt="output/2025-10-04 13_52_40.574539/iter3000_loss2.4391403198242188_context128_layers6_heads8_dmodel512_dff2048__batch32_lr0.0001_2025-10-04 17_06_12.832076.bin"
