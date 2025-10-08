@@ -201,8 +201,8 @@ def main():
 
         # Get batch of data
         x, y = get_batch(dataset=dataset_train, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
-        print(f"Batch x shape: {x.shape}, y shape: {y.shape}")
-        print(f"x={x},\ny={y}")
+        # print(f"Batch x shape: {x.shape}, y shape: {y.shape}")
+        # print(f"x={x},\ny={y}")
 
         # Forward pass
         logits = model(x)
