@@ -6,6 +6,10 @@
 # 327,680,000	256			32			40,000
 # 327,680,000	256			64			20,000
 # 327,680,000	256			128 		10,000
+#
+#  40,960,000	256			16  		10,000 
+#  40,960,000	256			32  		 5,000 
+#  40,960,000	256			64  		 2,500 
 ############################################################
 parm='--d_model=512
     --d_ff=1344
@@ -20,7 +24,7 @@ parm='--d_model=512
     --lr_schedule_max_lr=1e-3
     --lr_schedule_min_lr=1e-6
     --lr_schedule_warmup_iters=150
-    --lr_schedule_total_iters=10000
+    --lr_schedule_total_iters=3000
     --eval_every=100
     --eval_iters=10
     --log_every=1

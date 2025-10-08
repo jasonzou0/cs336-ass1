@@ -40,12 +40,17 @@ def parse_args():
     parser.add_argument('--d_ff', type=int, default=2048, help='Dimension of feedforward network.')
     parser.add_argument('--theta', type=float, default=10000.0, help='RoPE theta parameter.')
 
-    # optimization hyperparameters
-    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Initial learning rate.')
-    parser.add_argument('--lr_schedule_max_lr', type=float, default=1e-3, help='Maximum learning rate for learning rate schedule.')
+    # learning rate scheduler hyperparameters
+    parser.add_argument('--lr_schedule_max_lr', type=float, default=1e-3, help='Maximum learning rate for learning rate schedule. Normally 10x or 20x of min lr')
     parser.add_argument('--lr_schedule_min_lr', type=float, default=1e-5, help='Minimum learning rate for learning rate schedule.')
     parser.add_argument('--lr_schedule_warmup_iters', type=int, default=150, help='Number of warmup iterations for learning rate schedule.')
     parser.add_argument('--lr_schedule_total_iters', type=int, default=1000, help='Total number of iterations for learning rate schedule.')
+
+    # optimizer hyperparameters
+    parser.add_argument('--adamw_beta1', type=float, default=0.9, help='Beta1 parameter for AdamW optimizer.')
+    parser.add_argument('--adamw_beta2', type=float, default=0.999, help='Beta2 parameter for AdamW optimizer.')
+    parser.add_argument('--adamw_eps', type=float, default=1e-8, help='Epsilon parameter for AdamW optimizer.')
+    parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for AdamW optimizer.')
 
     # other hyperparameters
     parser.add_argument('--compile', action='store_true', help='Whether to compile the model for performance (requires PyTorch 2.0+).')
@@ -139,7 +144,7 @@ def main():
     # model=torch.compile(model)  # Optional: Compile the model for performance
 
     # AdamW optimizer
-    optimizer=AdamW(model.parameters(), lr=args.learning_rate)
+    optimizer=AdamW(model.parameters(), lr=args.lr_schedule_min_lr, betas=(args.adamw_beta1, args.adamw_beta2), eps=args.adamw_eps, weight_decay=args.weight_decay)
     
     # Load Checkpoint?
     if args.ckpt is not None:
@@ -185,9 +190,7 @@ def main():
     else:
         iter=0
 
-    # initialize learning rate parm used to decide whether to update lr in optimizer for each iteration
-    lr_old=args.learning_rate
-    loss=99.99 
+    loss=999.99 
 
     print(f"Entering training loop...")
     while True:
@@ -215,13 +218,25 @@ def main():
         # Gradient clipping
         gradient_clipping(model.parameters(), max_l2_norm=args.max_grad_norm)
 
+        # Update learning rate before optimizer step if using a scheduler
+        lr_new=learning_rate_schedule(it=iter, 
+                                      min_learning_rate=args.lr_schedule_min_lr,
+                                      max_learning_rate=args.lr_schedule_max_lr,
+                                      warmup_iters=args.lr_schedule_warmup_iters,
+                                      cosine_cycle_iters=args.lr_schedule_total_iters)   
+        # TODO: is this the right way to update learning rate for AdamW?
+        for param_group in optimizer.param_groups:
+            # print(f"learning rate update for next iteration {iter + 1}: {param_group['lr']}->{lr_new}")
+            param_group['lr'] = lr_new
+        # optimizer.lr=lr_new
+
         # Update model weights
         optimizer.step()
 
         # Save checkpoint
         if iter%args.save_every==0 and iter>0:
             # Save model checkpoint
-            file_checkpoints=os.path.join(dir_output, f'iter{iter}_loss{loss}_context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}_batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
+            file_checkpoints=os.path.join(dir_output, f'iter{iter}_loss{loss}_context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}_batch{args.batch_size}_lr{lr_new}_{str(datetime.datetime.now()).replace(":","_")}.bin')
             save_checkpoint(model=model, optimizer=optimizer, iteration=iter, out=file_checkpoints)
             print(f"Saved checkpoint to {file_checkpoints}")
 
@@ -239,20 +254,6 @@ def main():
                     print(f"Intermediate eval loss: {loss} ")
             print(f"Evaluation loss at iteration {iter}: {sum(loss_list)/len(loss_list)}")
             model.train()
-
-        # Update learning rate for next iteration if using a scheduler
-        lr_new=learning_rate_schedule(it=iter, 
-                                      min_learning_rate=args.lr_schedule_min_lr,
-                                      max_learning_rate=args.lr_schedule_max_lr,
-                                      warmup_iters=args.lr_schedule_warmup_iters,
-                                      cosine_cycle_iters=args.lr_schedule_total_iters)   
-        if lr_old!=lr_new:
-            # TODO: is this the right way to update learning rate for AdamW?
-            for param_group in optimizer.param_groups:
-                # print(f"learning rate update for next iteration {iter + 1}: {param_group['lr']}->{lr_new}")
-                param_group['lr'] = lr_new
-            # optimizer.lr=lr_new
-        lr_old=lr_new
 
         # Logging
         t_it_end=datetime.datetime.now()
