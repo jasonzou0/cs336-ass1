@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument('--n_heads', type=int, default=8, help='Number of attention heads.')
     parser.add_argument('--d_model', type=int, default=512, help='Dimension of model embeddings.')
     parser.add_argument('--d_ff', type=int, default=2048, help='Dimension of feedforward network.')
+    parser.add_argument('--theta', type=float, default=10000.0, help='RoPE theta parameter.')
 
     # optimization hyperparameters
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Initial learning rate.')
@@ -47,6 +48,7 @@ def parse_args():
     parser.add_argument('--lr_schedule_total_iters', type=int, default=1000, help='Total number of iterations for learning rate schedule.')
 
     # other hyperparameters
+    parser.add_argument('--compile', action='store_true', help='Whether to compile the model for performance (requires PyTorch 2.0+).')
     parser.add_argument('--max_grad_norm', type=float, default=1.0, help='Maximum gradient norm for clipping.')
     parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility.')
     parser.add_argument('--device', type=str, default='cpu', help='Device to use for training (cpu or cuda).')
@@ -116,7 +118,7 @@ def main():
                         num_heads=args.n_heads,
                         d_model=args.d_model,
                         d_ff=args.d_ff,
-                        rope_theta=100000,
+                        rope_theta=args.theta,
                         device=torch.device(args.device),
                         dtype={'float32': torch.float32, 'float16': torch.float16, 'bfloat16': torch.bfloat16}[args.dtype] )
 
@@ -155,16 +157,24 @@ def main():
         
     # Compile model
     # QUESTION: when to compile? before or after loading checkpoint?
-    model=torch.compile(model, fullgraph=True)
+    if args.compile:
+        model=torch.compile(model, fullgraph=True)
 
     # Prepare Data
-    # see if tokenized data already exists
+    ## sample/training data
+    ## tokenizer
     tokenized_data_path = os.path.join(dir_data, args.tokenizer_data)
+    tokenizer=Tokenizer.load_from_directory(tokenized_data_path, use_cython=False)
 
+    ## training data
     tokenized_data_file_train = os.path.join(tokenized_data_path, 'tokenized_data_train.pkl')
     data_file_train=os.path.join(dir_data, args.training_data)  # Assuming the data file is named 'data_train.txt' 
-    tokenizer=Tokenizer.load_from_directory(tokenized_data_path, use_cython=False)
     dataset_train=load_data_and_tokenize(data_file=data_file_train, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file_train)
+
+    ## eval data
+    tokenized_data_file_eval = os.path.join(tokenized_data_path, 'tokenized_data_eval.pkl')
+    data_file_eval=os.path.join(dir_data, args.eval_data)  # Assuming the data file is named 'data_train.txt' 
+    dataset_eval=load_data_and_tokenize(data_file=data_file_eval, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file_eval)
 
     # set model to training mode
     model.train()
@@ -191,6 +201,8 @@ def main():
 
         # Get batch of data
         x, y = get_batch(dataset=dataset_train, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
+        print(f"Batch x shape: {x.shape}, y shape: {y.shape}")
+        print(f"x={x},\ny={y}")
 
         # Forward pass
         logits = model(x)
@@ -209,25 +221,22 @@ def main():
         # Save checkpoint
         if iter%args.save_every==0 and iter>0:
             # Save model checkpoint
-            file_checkpoints=os.path.join(dir_output, f'iter{iter}_loss{loss}_context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}__batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
+            file_checkpoints=os.path.join(dir_output, f'iter{iter}_loss{loss}_context{args.context_length}_layers{args.n_layers}_heads{args.n_heads}_dmodel{args.d_model}_dff{args.d_ff}_batch{args.batch_size}_lr{args.learning_rate}_{str(datetime.datetime.now()).replace(":","_")}.bin')
             save_checkpoint(model=model, optimizer=optimizer, iteration=iter, out=file_checkpoints)
             print(f"Saved checkpoint to {file_checkpoints}")
 
         # Evaluation
         if iter%args.eval_every==0 and iter>0:
             # Evaluate model on validation set
-            # TODO: implement eval
-            tokenized_data_file_eval = os.path.join(tokenized_data_path, 'tokenized_data_eval.pkl')
-            data_file_eval=os.path.join(dir_data, args.eval_data)  # Assuming the data file is named 'data_train.txt' 
-            dataset_eval=load_data_and_tokenize(data_file=data_file_eval, tokenizer=tokenizer, tokenized_data_file=tokenized_data_file_eval)
             loss_list=[]
             model.eval()
-            for _ in range(args.eval_iters):
-                x,y=get_batch(dataset=dataset_eval, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
-                logits=model(x)
-                loss=cross_entropy(logits, y)
-                loss_list.append(loss)
-                print(f"Intermediate eval loss: {loss} ")
+            with torch.no_grad():
+                for _ in range(args.eval_iters):
+                    x,y=get_batch(dataset=dataset_eval, context_length=args.context_length, batch_size=args.batch_size, device=args.device)
+                    logits=model(x)
+                    loss=cross_entropy(logits, y)
+                    loss_list.append(loss)
+                    print(f"Intermediate eval loss: {loss} ")
             print(f"Evaluation loss at iteration {iter}: {sum(loss_list)/len(loss_list)}")
             model.train()
 
